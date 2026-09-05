@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Settings — Pacific Skies</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<nav class="top"></nav>
+<main>
+  <div class="panel" style="width:380px;max-width:100%">
+    <h2 style="color:var(--accent);margin-top:0">Settings</h2>
+    <label>Master volume</label><input id="s-master" type="range" min="0" max="100" />
+    <label>SFX volume</label><input id="s-sfx" type="range" min="0" max="100" />
+    <div class="row" style="margin-top:12px"><button id="s-save" class="primary">Save</button></div>
+    <hr style="border-color:var(--line);margin:16px 0" />
+    <h3>Change password</h3>
+    <label>Current password</label><input id="p-cur" type="password" />
+    <label>New password</label><input id="p-new" type="password" />
+    <div class="row" style="margin-top:12px"><button id="p-save">Update password</button></div>
+    <hr style="border-color:var(--line);margin:16px 0" />
+    <h3>Danger zone</h3>
+    <div class="row"><button id="s-export">Export my data</button><button id="s-delete" style="border-color:var(--red);color:var(--red)">Delete account</button></div>
+    <div id="s-msg" class="muted" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</main>
+<script type="module" src="/settings.js"></script>
+</body>
+</html>
