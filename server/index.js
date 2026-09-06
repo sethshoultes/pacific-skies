@@ -78,8 +78,13 @@ function serveStatic(req, res, urlPath) {
   if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
-    res.end(data);
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+      'Cache-Control': 'no-cache',
+      'Content-Length': data.length,
+    });
+    // HEAD must not include a body -- the headers (incl. Content-Length) are the whole point.
+    res.end(req.method === 'HEAD' ? undefined : data);
   });
 }
 
@@ -242,7 +247,7 @@ wss.on('connection', (ws, req) => {
   });
   ws.on('close', () => { if (room) room.disconnect(pid); });
 });
-setInterval(() => heartbeat(wss.clients), 30000);
+setInterval(() => heartbeat(wss.clients), 30000).unref();
 
 server.listen(PORT, () => {
   console.log(`Pacific Skies listening on http://localhost:${PORT}`);

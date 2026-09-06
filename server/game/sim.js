@@ -41,15 +41,16 @@ export class Sim {
   }
 
   addPlayer(pid, opts = {}) {
+    const slot = opts.slot ?? 1;
     const p = {
-      pid, x: WORLD_W / 2 + (opts.slot === 1 ? 40 : opts.slot === 2 ? -40 : 0), y: WORLD_H - 80,
+      pid, x: WORLD_W / 2 + (slot === 1 ? 40 : slot === 2 ? -40 : 0), y: WORLD_H - 80,
       alive: true, lives: START_LIVES, score: 0, loops: START_LOOPS,
       looping: false, loopEndAt: 0, loopCooldownUntil: 0, invulnUntil: this.time + RESPAWN_INVULN_MS / 1000,
       shotCooldown: 0, side: false, fourway: false,
       input: { up: false, down: false, left: false, right: false, fire: false, loop: false },
       prevLoopInput: false,
       kills: 0, shotsFired: 0, hits: 0, hitThisStage: false, loopDodges: 0,
-      slot: opts.slot || 1,
+      slot,
     };
     this.players.set(pid, p);
     return p;

@@ -32,6 +32,21 @@ function waitForServer(url, timeoutMs = 20_000) {
   });
 }
 
+// SIGTERM first, but if the child ignores it (or is wedged) escalate to SIGKILL after a bound so
+// this script can never hang forever on a stuck server -- important for CI, which must not stall.
+async function stopServer(server, serverExit, timeoutMs = 5000) {
+  if (server.exitCode !== null || !server.pid) { await serverExit.catch(() => {}); return; }
+  try { process.kill(server.pid, 'SIGTERM'); } catch { return; }
+  const exited = await Promise.race([
+    serverExit.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+  ]);
+  if (!exited && server.exitCode === null && server.pid) {
+    try { process.kill(server.pid, 'SIGKILL'); } catch {}
+    await serverExit.catch(() => {});
+  }
+}
+
 async function main() {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'pacific-skies-smoke-'));
   const port = await findFreePort();
@@ -111,8 +126,7 @@ async function main() {
     if (serverOutput) console.error('[smoke] server output:\n' + serverOutput);
   } finally {
     if (browser) await browser.close().catch(() => {});
-    if (server.exitCode === null && server.pid) { try { process.kill(server.pid, 'SIGTERM'); } catch {} }
-    await serverExit.catch(() => {});
+    await stopServer(server, serverExit);
     await rm(dataDir, { recursive: true, force: true }).catch(() => {});
   }
 

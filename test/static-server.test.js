@@ -44,6 +44,17 @@ test('static server rejects non-GET/HEAD methods', async (t) => {
   assert.equal(head.status, 200);
 });
 
+test('HEAD requests get the right Content-Length but no body', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+  const get = await fetch(server.baseUrl + '/index.html');
+  const getBytes = await get.arrayBuffer();
+  const head = await fetch(server.baseUrl + '/index.html', { method: 'HEAD' });
+  const headBytes = await head.arrayBuffer();
+  assert.equal(head.headers.get('content-length'), String(getBytes.byteLength));
+  assert.equal(headBytes.byteLength, 0, 'HEAD must not include a response body');
+});
+
 test('POST body over the size cap is rejected', async (t) => {
   const server = await startServer();
   t.after(() => server.stop());

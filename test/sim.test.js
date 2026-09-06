@@ -5,6 +5,13 @@ import { WORLD_W, WORLD_H, LOOP_MS, DT, START_LOOPS, RESPAWN_LOOPS } from '../sh
 
 function stepN(sim, n) { for (let i = 0; i < n; i++) sim.step(); }
 
+test('addPlayer stores slot 0 as-is instead of treating it as unset', () => {
+  const sim = new Sim({ seed: 'slot0' });
+  const p = sim.addPlayer('p1', { slot: 0 });
+  assert.equal(p.slot, 0, 'slot 0 is a legitimate value, not a falsy "unset"');
+  assert.equal(p.x, WORLD_W / 2, 'slot 0 gets no left/right offset, same as any slot other than 1 or 2');
+});
+
 test('movement stays within world bounds', () => {
   const sim = new Sim({ seed: 't1' });
   sim.addPlayer('p1');

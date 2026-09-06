@@ -39,6 +39,22 @@ function waitForServer(url, timeoutMs = 20_000) {
   });
 }
 
+// SIGTERM first, but if the child ignores it (or is wedged) escalate to SIGKILL after a bound so
+// this script can never hang forever on a stuck server -- important for CI, which must not stall.
+async function stopServer(server, serverExit, timeoutMs = 5000) {
+  if (!server) return;
+  if (server.exitCode !== null || !server.pid) { await serverExit.catch(() => {}); return; }
+  try { process.kill(server.pid, 'SIGTERM'); } catch { return; }
+  const exited = await Promise.race([
+    serverExit.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+  ]);
+  if (!exited && server.exitCode === null && server.pid) {
+    try { process.kill(server.pid, 'SIGKILL'); } catch {}
+    await serverExit.catch(() => {});
+  }
+}
+
 const externalBaseUrl = process.env.E2E_BASE_URL ? process.env.E2E_BASE_URL.replace(/\/+$/, '') : null;
 
 async function main() {
@@ -155,10 +171,7 @@ async function main() {
     if (helperWs) try { helperWs.close(); } catch {}
     if (browserA) await browserA.close().catch(() => {});
     if (browserB) await browserB.close().catch(() => {});
-    if (server) {
-      if (server.exitCode === null && server.pid) { try { process.kill(server.pid, 'SIGTERM'); } catch {} }
-      await serverExit.catch(() => {});
-    }
+    if (server) await stopServer(server, serverExit);
     if (dataDir) await rm(dataDir, { recursive: true, force: true }).catch(() => {});
   }
 
