@@ -1,13 +1,21 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 // Always a fresh temp dir -- falling back to an existing DATA_DIR could share a SQLite DB with
 // another test file's run and make assertions order-dependent/flaky.
-process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
+const dataDir = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
+process.env.DATA_DIR = dataDir;
 const { Room } = await import('../server/game/room.js');
+const { db } = await import('../server/db.js');
+
+after(async () => {
+  try { db.close(); } catch {}
+  await rm(dataDir, { recursive: true, force: true }).catch(() => {});
+});
 
 function fakeClient() {
   const sent = [];

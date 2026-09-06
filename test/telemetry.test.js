@@ -1,14 +1,21 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 // Always a fresh temp dir -- falling back to an existing DATA_DIR could share a SQLite DB with
 // another test file's run and make assertions order-dependent/flaky.
-process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'skies-telemetry-test-'));
+const dataDir = mkdtempSync(path.join(tmpdir(), 'skies-telemetry-test-'));
+process.env.DATA_DIR = dataDir;
 const telemetry = await import('../server/telemetry.js');
 const { db } = await import('../server/db.js');
+
+after(async () => {
+  try { db.close(); } catch {}
+  await rm(dataDir, { recursive: true, force: true }).catch(() => {});
+});
 
 function lastEvent() {
   return db.prepare('SELECT * FROM events ORDER BY id DESC LIMIT 1').get();
@@ -38,4 +45,18 @@ test('recordEvent never throws even if the data cannot be JSON-serialized', () =
   const row = lastEvent();
   assert.equal(row.kind, 'circular');
   assert.doesNotThrow(() => JSON.parse(row.data));
+});
+
+test('the oversized-payload cap is measured in bytes, not UTF-16 characters', () => {
+  // Each of these multi-byte characters is 1 JS string character but 3 UTF-8 bytes, so ~2000 of
+  // them is under the 4000-*character* mark but well over the 4000-*byte* mark -- this must still
+  // be caught as oversized.
+  const multiByte = { blob: '☃'.repeat(2000) };
+  const jsonLength = JSON.stringify(multiByte).length;
+  assert.ok(jsonLength < 4000, 'sanity check: character length must stay under 4000 for this test to be meaningful');
+  telemetry.recordEvent({ kind: 'multibyte_oversized', data: multiByte });
+  const row = lastEvent();
+  assert.equal(row.kind, 'multibyte_oversized');
+  const parsed = JSON.parse(row.data);
+  assert.equal(parsed.truncated, true, 'a byte-oversized, character-undersized payload must still be flagged as truncated');
 });
