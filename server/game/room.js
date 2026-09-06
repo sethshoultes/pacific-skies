@@ -22,7 +22,6 @@ export class Room {
     this.tickTimer = null;
     this.startedAt = null;
     this._telemetryHooked = false;
-    this._untouchedThisStage = new Map(); // pid -> bool, tracked for the "Untouchable" achievement
   }
 
   get playerCount() { return this.clients.size; }

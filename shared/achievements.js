@@ -13,7 +13,7 @@ export const ACHIEVEMENTS = [
   { id: 'deep_run_24', name: 'Deep Run: Saipan', desc: 'Reach stage 24.', stat: 'deepest_stage_reached', threshold: 8 }, // stored as "stages cleared" = 32-24
   { id: 'deep_run_16', name: 'Deep Run: Okinawa', desc: 'Reach stage 16.', stat: 'deepest_stage_reached', threshold: 16 },
   { id: 'deep_run_8', name: 'Deep Run: Kobe', desc: 'Reach stage 8.', stat: 'deepest_stage_reached', threshold: 24 },
-  { id: 'deep_run_1', name: 'Deep Run: Tokyo', desc: 'Reach stage 1 (win the game).', stat: 'deepest_stage_reached', threshold: 31 },
+  { id: 'deep_run_1', name: 'Deep Run: Tokyo', desc: 'Reach stage 1, the final leg of the run.', stat: 'deepest_stage_reached', threshold: 31 },
 ];
 
 /** Given a stat key just bumped to `value`, and the set of achievement ids already unlocked,

@@ -4,7 +4,6 @@
 import { renderNav, api, token, toast, esc } from './common.js';
 import { initAudio, sfx, setMuted, isMuted } from './audio.js';
 import { createOcean, drawBackground, drawEntities } from './render.js';
-import { WORLD_H } from '../shared/constants.js';
 
 renderNav('play');
 initAudio();
@@ -236,4 +235,3 @@ function renderFrame(ts) {
   }
   requestAnimationFrame(renderFrame);
 }
-void WORLD_H;

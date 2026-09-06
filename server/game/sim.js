@@ -93,7 +93,6 @@ export class Sim {
   // ---------------- players ----------------
   _stepPlayer(p) {
     if (!p.alive) return;
-    const diff = this.difficulty();
     let dx = 0, dy = 0;
     if (p.input.up) dy -= 1;
     if (p.input.down) dy += 1;
@@ -124,7 +123,6 @@ export class Sim {
       this._fire(p);
       p.shotCooldown = p.fourway ? SHOT_COOLDOWN_MS_4WAY : SHOT_COOLDOWN_MS;
     }
-    void diff;
   }
 
   _fire(p) {

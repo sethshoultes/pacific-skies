@@ -3,6 +3,14 @@
 // SKIES_DEBUG=1 debug hook (a lightweight helper WebSocket, not one of the two player slots),
 // see the tally screen and the next stage begin -- plus a check of the dashboard and settings
 // pages. Not a node:test file, run via `npm run e2e`.
+//
+// Set E2E_BASE_URL to point the whole sweep at an already-running server (e.g. the live
+// production site) instead of spawning one locally, e.g.:
+//   E2E_BASE_URL=https://skies.adventurebuildr.com npm run e2e
+// When set, no local server is started; the debug-hook WebSocket is derived from the base URL
+// (http -> ws, https -> wss). Note: the debug hook only responds if the target server itself was
+// started with SKIES_DEBUG=1 -- against a production server without that flag, the stage-clear
+// step will time out and the sweep will fail, which is the expected (and safe) outcome.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -31,30 +39,49 @@ function waitForServer(url, timeoutMs = 20_000) {
   });
 }
 
-async function main() {
-  const dataDir = await mkdtemp(path.join(tmpdir(), 'pacific-skies-e2e-'));
-  const port = await findFreePort();
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const baseUrl = `http://127.0.0.1:${port}`;
+const externalBaseUrl = process.env.E2E_BASE_URL ? process.env.E2E_BASE_URL.replace(/\/+$/, '') : null;
 
-  log(`starting server on ${baseUrl} (SKIES_DEBUG=1)`);
-  const server = spawn(process.execPath, ['--no-warnings=ExperimentalWarning', 'server/index.js'], {
-    cwd: root,
-    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, SKIES_DEBUG: '1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+async function main() {
+  const external = Boolean(externalBaseUrl);
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+  let dataDir = null;
+  let server = null;
+  let serverExit = null;
   let serverOutput = '';
-  server.stdout.on('data', (d) => { serverOutput += d.toString(); });
-  server.stderr.on('data', (d) => { serverOutput += d.toString(); });
-  const serverExit = once(server, 'exit');
+  let baseUrl;
+
+  if (external) {
+    baseUrl = externalBaseUrl;
+  } else {
+    dataDir = await mkdtemp(path.join(tmpdir(), 'pacific-skies-e2e-'));
+    const port = await findFreePort();
+    baseUrl = `http://127.0.0.1:${port}`;
+    log(`starting server on ${baseUrl} (SKIES_DEBUG=1)`);
+    server = spawn(process.execPath, ['--no-warnings=ExperimentalWarning', 'server/index.js'], {
+      cwd: root,
+      env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, SKIES_DEBUG: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    server.stdout.on('data', (d) => { serverOutput += d.toString(); });
+    server.stderr.on('data', (d) => { serverOutput += d.toString(); });
+    serverExit = once(server, 'exit');
+  }
+  const wsBase = baseUrl.replace(/^http/, 'ws');
+
   let browserA = null, browserB = null, helperWs = null;
   let failed = false;
 
   try {
-    await Promise.race([
-      waitForServer(baseUrl),
-      serverExit.then(([code]) => { throw new Error(`server exited early (code ${code}):\n${serverOutput}`); }),
-    ]);
+    if (external) {
+      log(`targeting external server at ${baseUrl} (E2E_BASE_URL set; not starting a local server)`);
+      await waitForServer(baseUrl);
+    } else {
+      await Promise.race([
+        waitForServer(baseUrl),
+        serverExit.then(([code]) => { throw new Error(`server exited early (code ${code}):\n${serverOutput}`); }),
+      ]);
+    }
     log('server is listening');
 
     browserA = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
@@ -90,7 +117,7 @@ async function main() {
     log(`stage before forced clear: ${stageBefore}`);
 
     log('attaching a helper socket to force a stage clear via the debug hook');
-    helperWs = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    helperWs = new WebSocket(`${wsBase}/ws`);
     await once(helperWs, 'open');
     helperWs.send(JSON.stringify({ t: 'debug', roomId, action: 'clear-stage' }));
 
@@ -128,9 +155,11 @@ async function main() {
     if (helperWs) try { helperWs.close(); } catch {}
     if (browserA) await browserA.close().catch(() => {});
     if (browserB) await browserB.close().catch(() => {});
-    if (server.exitCode === null && server.pid) { try { process.kill(server.pid, 'SIGTERM'); } catch {} }
-    await serverExit.catch(() => {});
-    await rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    if (server) {
+      if (server.exitCode === null && server.pid) { try { process.kill(server.pid, 'SIGTERM'); } catch {} }
+      await serverExit.catch(() => {});
+    }
+    if (dataDir) await rm(dataDir, { recursive: true, force: true }).catch(() => {});
   }
 
   process.exit(failed ? 1 : 0);
