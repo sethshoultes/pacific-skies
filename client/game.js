@@ -67,11 +67,38 @@ function connect() {
 }
 function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
+// Reconnect support: the server hands out a private resumeToken (distinct from pid, which is
+// broadcast to every player via snapshots) so a dropped connection can rejoin its own slot rather
+// than being rejected as "Game already in progress". Persisted in sessionStorage (not
+// localStorage) so it only survives a refresh/reconnect within the same tab session, not forever.
+const RESUME_KEY = 'ps_resume';
+function saveResume(roomId, pid, resumeToken) {
+  if (!roomId || !pid || !resumeToken) return;
+  try { sessionStorage.setItem(RESUME_KEY, JSON.stringify({ roomId, pid, resumeToken })); } catch { /* ignore */ }
+}
+function loadResume(roomId) {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(RESUME_KEY) || 'null');
+    if (r && r.roomId === roomId && r.pid && r.resumeToken) return r;
+  } catch { /* ignore */ }
+  return null;
+}
+function clearResume() {
+  try { sessionStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
+}
+
 function handleMessage(msg) {
   switch (msg.t) {
     case 'joined':
       myPid = msg.pid; roomState = msg.room;
-      renderRoom(); show('room');
+      saveResume(msg.room.id, msg.pid, msg.resumeToken);
+      if (msg.room.state === 'playing') {
+        // Resumed back into a game already in progress -- go straight to the live view instead
+        // of the pre-game lobby, which no 'start' broadcast will ever arrive to dismiss.
+        show('game'); attractRunning = false; beginGameLoop();
+      } else {
+        renderRoom(); show('room');
+      }
       break;
     case 'roster': roomState = msg.room; renderRoom(); break;
     case 'countdown':
@@ -90,7 +117,7 @@ function handleMessage(msg) {
     case 'event': onEvent(msg.event); break;
     case 'achievement': toast('Achievement unlocked', msg.achievement.name, 'ach'); sfx('1up'); break;
     case 'gameover': onGameOver(msg); break;
-    case 'kicked': toast('Kicked', 'You were removed from the room.'); location.href = '/'; break;
+    case 'kicked': clearResume(); toast('Kicked', 'You were removed from the room.'); location.href = '/'; break;
     case 'error': toast('Error', msg.error); break;
     default: break;
   }
@@ -146,6 +173,9 @@ function showTally(ev) {
 function onGameOver(msg) {
   running = false;
   if (inputTimer) { clearInterval(inputTimer); inputTimer = null; } // nothing to send once the run is over
+  // The room is over -- a stale resume here would make the next page load try to rejoin/resume a
+  // room that's already ended or been deleted, producing an avoidable "room no longer exists".
+  clearResume();
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   const title = msg.reason === 'victory' ? 'VICTORY — TOKYO SECURED' : 'GAME OVER';
@@ -187,15 +217,26 @@ q('#create').addEventListener('click', () => {
   connect().addEventListener('open', () => send({ t: 'join', token: token(), name: guestName(), create: true }));
   sfx('coin');
 });
+// Builds the {t:'join', ...} payload for a known target room, including resume credentials when
+// sessionStorage has a matching one for this exact room -- so a refresh/reconnect rejoins the
+// same slot instead of being rejected as "Game already in progress".
+function joinRoomMsg(roomId) {
+  const resume = loadResume(roomId);
+  return {
+    t: 'join', token: token(), name: guestName(), roomId,
+    ...(resume ? { resumePid: resume.pid, resume: resume.resumeToken } : {}),
+  };
+}
+
 q('#join-link').addEventListener('click', () => {
   const id = prompt('Room code?');
   if (!id) return;
-  connect().addEventListener('open', () => send({ t: 'join', token: token(), name: guestName(), roomId: id }));
+  connect().addEventListener('open', () => send(joinRoomMsg(id)));
 });
 
 const params = new URLSearchParams(location.search);
 if (params.get('room')) {
-  connect().addEventListener('open', () => send({ t: 'join', token: token(), name: guestName(), roomId: params.get('room') }));
+  connect().addEventListener('open', () => send(joinRoomMsg(params.get('room'))));
 }
 
 // ---------------- game loop: input + render ----------------

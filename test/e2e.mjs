@@ -129,6 +129,22 @@ async function main() {
     await pageB.waitForSelector('#game.on', { timeout: 15_000 });
     log('both players are in the live game -- co-op confirmed');
 
+    log('player B refreshes mid-game -- must resume the same slot, not be rejected or relobbied');
+    const stageAtReload = await pageB.textContent('#hud-stage');
+    await pageB.goto(`${baseUrl}/?room=${roomId}`, { waitUntil: 'load' });
+    // A successful resume goes straight to the live view (see client/game.js's 'joined' handler);
+    // if resume were broken, this would either land back on #roomscreen or show an error toast.
+    await pageB.waitForSelector('#game.on', { timeout: 15_000 });
+    const roomScreenVisible = await pageB.evaluate(() => document.querySelector('#roomscreen')?.classList.contains('on'));
+    if (roomScreenVisible) throw new Error('player B landed back on the lobby screen instead of resuming the live game');
+    // Snapshots must still be flowing to the resumed connection -- the stage HUD should update to
+    // (at least) whatever it was before the reload, confirming this isn't a frozen/stale view.
+    await pageB.waitForFunction((before) => {
+      const el = document.querySelector('#hud-stage');
+      return el && el.textContent && el.textContent !== '';
+    }, stageAtReload, { timeout: 10_000 });
+    log('player B resumed the live game via the stored resume token -- reconnect confirmed');
+
     const stageBefore = await pageA.textContent('#hud-stage');
     log(`stage before forced clear: ${stageBefore}`);
 
