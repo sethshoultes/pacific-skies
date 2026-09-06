@@ -34,6 +34,16 @@ test('static server serves the client and shared directories', async (t) => {
   assert.equal(shared.status, 200);
 });
 
+test('static server rejects non-GET/HEAD methods', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+  const post = await fetch(server.baseUrl + '/index.html', { method: 'POST' });
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get('allow'), 'GET, HEAD');
+  const head = await fetch(server.baseUrl + '/index.html', { method: 'HEAD' });
+  assert.equal(head.status, 200);
+});
+
 test('POST body over the size cap is rejected', async (t) => {
   const server = await startServer();
   t.after(() => server.stop());

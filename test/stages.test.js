@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageFor, validateAllStages, isBossStage, STAGE_NAMES } from '../shared/stages.js';
+import { stageFor, validateAllStages, validateStage, isBossStage, STAGE_NAMES } from '../shared/stages.js';
 import { STAGE_COUNT } from '../shared/constants.js';
 
 test('all 32 stages validate cleanly (boss every 4th, mid-boss otherwise, sorted waves)', () => {
@@ -45,6 +45,18 @@ test('stage 1 has no mid-boss so the finale is a pure victory run, and still val
   const s1 = stageFor(1);
   assert.equal(s1.waves.filter((w) => w.spawn === 'midboss').length, 0);
   assert.equal(s1.waves.filter((w) => w.spawn === 'boss').length, 0);
+});
+
+test('validateStage rejects a boss wave on a non-boss stage', () => {
+  const s = { number: 5, waves: [{ at: 1, spawn: 'midboss' }, { at: 2, spawn: 'boss' }] };
+  const problems = validateStage(s);
+  assert.ok(problems.some((p) => /boss wave on non-boss stage/.test(p)), problems.join('; '));
+});
+
+test('validateStage rejects a mid-boss wave on a boss stage', () => {
+  const s = { number: 4, waves: [{ at: 1, spawn: 'midboss' }, { at: 2, spawn: 'boss' }] };
+  const problems = validateStage(s);
+  assert.ok(problems.some((p) => /mid-boss wave on boss stage/.test(p)), problems.join('; '));
 });
 
 test('stageName falls back to a generated sector name for unknown stages', async () => {

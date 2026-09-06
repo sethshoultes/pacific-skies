@@ -63,6 +63,7 @@ setInterval(() => {
 }, 5 * 60_000).unref();
 
 function serveStatic(req, res, urlPath) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
   let rel;
   try { rel = decodeURIComponent(urlPath); } catch { res.writeHead(400); return res.end(); }
   if (rel.includes('\0')) { res.writeHead(400); return res.end(); }

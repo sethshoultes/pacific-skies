@@ -149,7 +149,9 @@ export function validateStage(stage) {
     if (w.spawn === 'midboss') midBossCount++;
   }
   if (isBossStage(n) && bossCount !== 1) problems.push(`stage ${n}: expected exactly one boss, got ${bossCount}`);
+  if (!isBossStage(n) && bossCount !== 0) problems.push(`stage ${n}: boss wave on non-boss stage (got ${bossCount})`);
   if (!isBossStage(n) && n !== 1 && midBossCount !== 1) problems.push(`stage ${n}: expected exactly one mid-boss, got ${midBossCount}`);
+  if (isBossStage(n) && midBossCount !== 0) problems.push(`stage ${n}: mid-boss wave on boss stage (got ${midBossCount})`);
   if (stage.waves.length === 0) problems.push(`stage ${n}: no waves`);
   return problems;
 }
