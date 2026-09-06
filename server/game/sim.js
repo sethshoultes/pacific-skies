@@ -416,6 +416,12 @@ export class Sim {
     p.alive = true; p.x = Sim._spawnX(p.slot); p.y = WORLD_H - 80;
     p.invulnUntil = this.time + RESPAWN_INVULN_MS / 1000;
     p.respawnAt = null;
+    // A fresh life starts from a clean control state: no loop in progress or on cooldown, no shot
+    // cooldown, no held input carried over from the moment of death (matters most for a continue,
+    // where the player may have been sitting on the game-over screen for a while).
+    p.looping = false; p.loopEndAt = 0; p.loopCooldownUntil = 0; p.prevLoopInput = false;
+    p.shotCooldown = 0;
+    p.input = { up: false, down: false, left: false, right: false, fire: false, loop: false };
   }
 
   _spawnPow(x, y) {

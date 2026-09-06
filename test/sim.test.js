@@ -325,11 +325,17 @@ test('continueRun gives players who are out of lives a fresh set, resets their s
   assert.equal(p.lives, 0); assert.equal(p.alive, false);
   assert.ok(sim.allPlayersOut() === false, 'p2 is still alive');
   q2.score = 777;
+  // Stale control state from the moment of death must not leak into the new life.
+  p.looping = true; p.loopEndAt = 999; p.loopCooldownUntil = 999; p.prevLoopInput = true; p.shotCooldown = 500;
+  p.input = { up: true, down: false, left: true, right: false, fire: true, loop: true };
   const events = [];
   sim.onEvent = (ev) => events.push(ev);
   const pids = sim.continueRun();
   assert.deepEqual(pids, ['p1']);
   assert.equal(p.alive, true); assert.equal(p.lives, 3); assert.equal(p.score, 0); assert.equal(p.side, false);
+  assert.equal(p.looping, false); assert.equal(p.loopEndAt, 0); assert.equal(p.loopCooldownUntil, 0);
+  assert.equal(p.prevLoopInput, false); assert.equal(p.shotCooldown, 0);
+  assert.deepEqual(p.input, { up: false, down: false, left: false, right: false, fire: false, loop: false });
   assert.ok(sim.time < p.invulnUntil, 'respawn grants the usual invulnerability window');
   assert.equal(q2.score, 777, 'players still in the game are untouched');
   assert.equal(sim.enemyBullets.length, 0);
