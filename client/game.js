@@ -51,15 +51,19 @@ let roomState = null;
 let latestSnap = null;
 
 function connect() {
+  // A double-click on quick/create/join would otherwise leak the previous socket (and a ghost
+  // server-side client); drop it quietly before opening a fresh one.
+  if (ws) { const old = ws; ws = null; old.onclose = null; try { old.close(); } catch { /* already closed */ } }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.addEventListener('open', () => {});
-  ws.addEventListener('message', (ev) => {
+  const sock = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = sock;
+  sock.addEventListener('message', (ev) => {
+    if (ws !== sock) return; // superseded by a newer connection
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     handleMessage(msg);
   });
-  ws.addEventListener('close', () => { toast('Disconnected', 'Connection to server lost.'); });
-  return ws;
+  sock.addEventListener('close', () => { if (ws === sock) toast('Disconnected', 'Connection to server lost.'); });
+  return sock;
 }
 function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 

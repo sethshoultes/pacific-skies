@@ -128,11 +128,13 @@ export class Sim {
   }
 
   _fire(p) {
+    // Accuracy is hits / shotsFired and hits are counted per bullet, so count shots per bullet
+    // actually spawned too; otherwise a four-way or side-gun volley could push accuracy past 100%.
     const spawn = (vx, vy, x = p.x) => {
       if (this.bullets.filter((b) => b.owner === p.pid).length >= MAX_PLAYER_SHOTS) return;
       this.bullets.push({ id: uid(), x, y: p.y - 10, vx, vy, owner: p.pid });
+      p.shotsFired++; this.stats.shotsFired++;
     };
-    p.shotsFired++; p.stats = p.stats || {}; this.stats.shotsFired++;
     if (p.fourway) {
       spawn(-90, -SHOT_SPEED); spawn(-30, -SHOT_SPEED); spawn(30, -SHOT_SPEED); spawn(90, -SHOT_SPEED);
     } else {

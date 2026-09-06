@@ -195,3 +195,14 @@ test('red-formation kills award the red-formation score, not the small-plane sco
   assert.equal(gainedSmall, SCORE.small);
   assert.notEqual(SCORE.redFormation, SCORE.small);
 });
+
+test('shotsFired counts every bullet spawned so four-way volleys cannot exceed 100% accuracy', () => {
+  const sim = new Sim({ seed: 'acc', stageNumber: 1, onEvent() {} });
+  sim.addPlayer('p1', { slot: 0 });
+  const p = sim.players.get('p1');
+  p.fourway = true; p.side = true;
+  sim._fire(p);
+  assert.equal(p.shotsFired, 6);
+  assert.equal(sim.stats.shotsFired, 6);
+  assert.equal(sim.bullets.filter((b) => b.owner === 'p1').length, 6);
+});
