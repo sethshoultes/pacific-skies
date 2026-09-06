@@ -515,6 +515,12 @@ export class Sim {
       p.lives = START_LIVES; p.score = 0; p.loops = START_LOOPS;
       p.side = false; p.fourway = false;
       p.kills = 0; p.shotsFired = 0; p.hits = 0; p.hitThisStage = false;
+      // Clear transient loop/input state left over from before the game ended -- otherwise a
+      // continue can respawn the player still mid-loop (invulnerable/unable to fire), stuck on an
+      // old loop cooldown, or instantly moving/firing again from stale held-key input.
+      p.looping = false; p.loopEndAt = 0; p.loopCooldownUntil = 0; p.prevLoopInput = false;
+      p.shotCooldown = 0;
+      p.input = { up: false, down: false, left: false, right: false, fire: false, loop: false };
       this.respawnPlayer(p);
       out.push(p.pid);
     }

@@ -343,6 +343,28 @@ test('continueRun gives players who are out of lives a fresh set, resets their s
   assert.deepEqual(sim.continueRun(), [], 'nothing to continue when nobody is out');
 });
 
+test('continueRun clears stale loop state, loop cooldown, and held input left over from before death', () => {
+  const sim = new Sim({ seed: 'cont-loop' });
+  const p = sim.addPlayer('p1');
+  p.lives = 1;
+  // Simulate state left behind from earlier in the run: a loop cooldown far in the future, and
+  // input keys still held from the moment of death.
+  p.looping = true; p.loopEndAt = sim.time + 5; p.loopCooldownUntil = sim.time + 5; p.prevLoopInput = true;
+  p.shotCooldown = 5;
+  p.input = { up: true, down: false, left: true, right: false, fire: true, loop: true };
+  sim._killPlayer(p);
+  // Death doesn't clear looping/input on its own (out-of-lives players never reach the normal
+  // respawn path), so without the fix these would still be set going into the continue.
+  const pids = sim.continueRun();
+  assert.deepEqual(pids, ['p1']);
+  assert.equal(p.looping, false, 'must not respawn still mid-loop (invulnerable/unable to fire)');
+  assert.equal(p.loopEndAt, 0);
+  assert.equal(p.loopCooldownUntil, 0, 'a fresh credit must be able to loop immediately, not wait out a stale cooldown');
+  assert.equal(p.prevLoopInput, false);
+  assert.equal(p.shotCooldown, 0);
+  assert.deepEqual(p.input, { up: false, down: false, left: false, right: false, fire: false, loop: false }, 'stale held-key input must not carry into the new life');
+});
+
 test('snapshot bullets carry ids so the client can interpolate them between ticks', () => {
   const sim = new Sim({ seed: 'ids' });
   const p = sim.addPlayer('p1');
