@@ -10,6 +10,7 @@ import path from 'node:path';
 const dataDir = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
 process.env.DATA_DIR = dataDir;
 const { Room } = await import('../server/game/room.js');
+const { Lobby } = await import('../server/game/lobby.js');
 const { db } = await import('../server/db.js');
 
 // Belt-and-suspenders cleanup: `after` handles the normal exit path, `process.on('exit')` covers
@@ -244,8 +245,7 @@ test('a run that scored nothing (e.g. a wasted continue) is not recorded as a le
   clearInterval(room.tickTimer);
 });
 
-test('the public room list omits per-player ids and the host flag; in-room info keeps them', async () => {
-  const { Lobby } = await import('../server/game/lobby.js');
+test('the public room list omits per-player ids and the host flag; in-room info keeps them', () => {
   const lobby = new Lobby();
   const room = lobby.create({ name: 'Public', isPublic: true });
   room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A', guestId: null });
