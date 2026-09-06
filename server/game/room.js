@@ -40,10 +40,19 @@ export class Room {
     return {
       id: this.id, name: this.name, isPublic: this.isPublic, state: this.state,
       playerCount: this.playerCount, maxPlayers: MAX_PLAYERS,
-      // pid is already broadcast in every snapshot, so exposing it here leaks nothing new; `host`
-      // lets the client offer the Start button only to the one player the server will honour.
+      // pid is already broadcast to room members in every snapshot, so exposing it here leaks
+      // nothing new to them; `host` lets the client offer the Start button only to the one player
+      // the server will honour. This shape is for in-room messages -- see publicInfo() for the
+      // room list anyone can fetch.
       players: [...this.clients.entries()].map(([pid, c], i) => ({ pid, name: c.name, ready: c.ready, away: c.away, host: i === 0 })),
     };
+  }
+
+  /** The room as shown in the public lobby list (GET /api/rooms): same summary as info(), but the
+   *  roster carries only display fields -- no per-player ids, which non-members have no use for. */
+  publicInfo() {
+    const info = this.info();
+    return { ...info, players: info.players.map(({ name, ready, away }) => ({ name, ready, away })) };
   }
 
   broadcast(msg) {

@@ -14,7 +14,7 @@ export class Lobby {
     this.onRoomStart = onRoomStart || (() => {});
   }
 
-  list() { return [...this.rooms.values()].filter((r) => r.isPublic && r.state !== 'over').map((r) => r.info()); }
+  list() { return [...this.rooms.values()].filter((r) => r.isPublic && r.state !== 'over').map((r) => r.publicInfo()); }
 
   create({ name, isPublic = true } = {}) {
     const id = crypto.randomBytes(3).toString('hex');

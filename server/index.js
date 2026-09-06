@@ -159,7 +159,7 @@ async function api(req, res, url) {
     if (!rateLimit(roomCreateKey(user, ip), 10, 60_000)) return json(res, 429, { error: 'Slow down: too many rooms created' });
     const b = await readBody(req);
     const room = lobby.create({ name: b.name, isPublic: b.public !== false });
-    return json(res, 200, { room: room.info() });
+    return json(res, 200, { room: room.publicInfo() });
   }
   json(res, 404, { error: 'No such endpoint' });
 }

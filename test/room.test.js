@@ -243,3 +243,17 @@ test('a run that scored nothing (e.g. a wasted continue) is not recorded as a le
   assert.equal(runsFor(), 1, 'a credit that scored is recorded');
   clearInterval(room.tickTimer);
 });
+
+test('the public room list omits per-player ids and the host flag; in-room info keeps them', async () => {
+  const { Lobby } = await import('../server/game/lobby.js');
+  const lobby = new Lobby();
+  const room = lobby.create({ name: 'Public', isPublic: true });
+  room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A', guestId: null });
+  room.join(fakeClient().ws, { pid: 'b', user: null, name: 'B', guestId: null });
+  const listed = lobby.list().find((r) => r.id === room.id);
+  assert.ok(listed, 'a public lobby room is listed');
+  assert.deepEqual(listed.players, [{ name: 'A', ready: false, away: false }, { name: 'B', ready: false, away: false }]);
+  for (const p of listed.players) { assert.equal('pid' in p, false); assert.equal('host' in p, false); }
+  assert.deepEqual(room.info().players.map((p) => [p.pid, p.host]), [['a', true], ['b', false]]);
+  room.close();
+});
