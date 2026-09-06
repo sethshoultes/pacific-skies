@@ -52,3 +52,42 @@ test('joining attaches the account to the sim player so stats hooks can record f
   room.join(g.ws, { pid: 'g1', user: null, name: 'guest', guestId: null });
   assert.equal(room.sim.players.get('g1').user, null);
 });
+
+test('resume() requires the client-private resumeToken, not the (broadcast, guessable) pid', () => {
+  const room = new Room({ id: 'r5', name: 'Resume', seed: 's' });
+  const host = fakeClient();
+  room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
+  assert.equal(room.start('host'), true);
+  const joinedMsg = host.sent.find((m) => m.t === 'joined');
+  const { resumeToken } = joinedMsg;
+  assert.ok(resumeToken && resumeToken.length >= 16, 'a private resume token is issued on join');
+
+  room.disconnect('host');
+  assert.equal(room.clients.get('host').away, true);
+
+  // Guessing the token as the pid itself (what the old, vulnerable protocol used) must fail.
+  assert.equal(room.resume({ readyState: 1, send: () => {} }, 'host', 'host'), null);
+  assert.equal(room.clients.get('host').away, true, 'a wrong token must not resume the slot');
+
+  // The real token succeeds.
+  const resumed = room.resume({ readyState: 1, send: () => {} }, 'host', resumeToken);
+  assert.deepEqual(resumed, { pid: 'host' });
+  assert.equal(room.clients.get('host').away, false);
+  clearInterval(room.tickTimer);
+});
+
+test('rejoining with the same pid clears a stale awayTimer instead of leaking it', () => {
+  const room = new Room({ id: 'r6', name: 'Rejoin', seed: 's' });
+  const host = fakeClient();
+  room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
+  assert.equal(room.start('host'), true);
+
+  room.disconnect('host');
+  const staleTimer = room.clients.get('host').awayTimer;
+  assert.ok(staleTimer, 'disconnect schedules an awayTimer');
+
+  room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
+  assert.equal(staleTimer._destroyed, true, 'the old awayTimer must be cleared on rejoin');
+  assert.equal(room.clients.get('host').awayTimer, null);
+  clearInterval(room.tickTimer);
+});

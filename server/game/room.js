@@ -49,24 +49,35 @@ export class Room {
     // only a player already in the room (reconnecting) may join again.
     if (this.state !== 'lobby' && !this.clients.has(pid)) throw new Error('Game already in progress');
     if (this.full && !this.clients.has(pid)) throw new Error('Room is full');
+    // A stale awayTimer from a previous disconnect must not survive this rejoin -- otherwise it
+    // fires later and evicts the player who just came back (see `disconnect`/`leave`).
+    const existing = this.clients.get(pid);
+    if (existing && existing.awayTimer) clearTimeout(existing.awayTimer);
     const finalGuestId = guestId || (user ? null : crypto.randomBytes(4).toString('hex'));
-    this.clients.set(pid, { ws, user, name, ready: false, away: false, awayTimer: null, guestId: finalGuestId });
+    // resumeToken is a private secret handed only to this client, distinct from `pid` -- pid is
+    // broadcast to every player in the room via game snapshots, so it must never itself be usable
+    // to resume another player's slot.
+    const resumeToken = crypto.randomBytes(16).toString('hex');
+    this.clients.set(pid, { ws, user, name, ready: false, away: false, awayTimer: null, guestId: finalGuestId, resumeToken });
     if (!this.sim.players.has(pid)) this.sim.addPlayer(pid, { slot: this.clients.size });
     // The stats/achievements hooks key off the sim player's account; guests stay null.
     this.sim.players.get(pid).user = user || null;
-    this.sendTo(pid, { t: 'joined', room: this.info(), pid, you: { name } });
+    this.sendTo(pid, { t: 'joined', room: this.info(), pid, you: { name }, resumeToken });
     this.broadcast({ t: 'roster', room: this.info() });
     return { pid, guestId: finalGuestId };
   }
 
-  resume(ws, resumeToken) {
-    const c = this.clients.get(resumeToken);
+  resume(ws, pid, resumeToken) {
+    const c = this.clients.get(pid);
     if (!c || !c.away) return null;
+    const known = Buffer.from(String(c.resumeToken || ''), 'utf8');
+    const presented = Buffer.from(String(resumeToken || ''), 'utf8');
+    if (known.length === 0 || known.length !== presented.length || !crypto.timingSafeEqual(known, presented)) return null;
     c.ws = ws; c.away = false;
     if (c.awayTimer) { clearTimeout(c.awayTimer); c.awayTimer = null; }
-    this.sendTo(resumeToken, { t: 'joined', room: this.info(), pid: resumeToken, you: { name: c.name } });
+    this.sendTo(pid, { t: 'joined', room: this.info(), pid, you: { name: c.name }, resumeToken: c.resumeToken });
     this.broadcast({ t: 'roster', room: this.info() });
-    return { pid: resumeToken };
+    return { pid };
   }
 
   setReady(pid, ready) {

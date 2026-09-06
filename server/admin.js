@@ -9,16 +9,15 @@ import { analytics } from './telemetry.js';
 let lobby = null;
 export function init(lobbyInstance) { lobby = lobbyInstance; }
 
-/** Admins are whoever is listed (by username) in SKIES_ADMINS, comma-separated -- or, when that
- *  env var is unset entirely, whichever account registered first (user id 1). */
+/** Admins are whoever is listed (by username) in SKIES_ADMINS, comma-separated. If that env var is
+ *  unset or empty, nobody is an admin -- there is no "first registered user" fallback, since on a
+ *  fresh/public deployment that would let whoever registers first grant themselves admin access. */
 export function isAdmin(user) {
   if (!user) return false;
   const raw = process.env.SKIES_ADMINS;
-  if (raw && raw.trim()) {
-    const names = raw.split(',').map((s) => s.trim()).filter(Boolean);
-    return names.includes(user.username);
-  }
-  return user.id === 1;
+  if (!raw || !raw.trim()) return false;
+  const names = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  return names.includes(user.username);
 }
 
 function json(res, status, body) {

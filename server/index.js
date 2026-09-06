@@ -188,8 +188,8 @@ wss.on('connection', (ws, req) => {
           const name = user ? user.username : String(msg.name || 'Guest').replace(/[^\w ]/g, '').slice(0, 12) || 'Guest';
           let target = msg.roomId ? lobby.get(msg.roomId) : null;
           if (msg.roomId && !target) throw new Error('That room no longer exists');
-          if (msg.resume && target) {
-            const resumed = target.resume(ws, msg.resume);
+          if (msg.resume && msg.resumePid && target) {
+            const resumed = target.resume(ws, msg.resumePid, msg.resume);
             if (resumed) { pid = resumed.pid; room = target; break; }
           }
           if (!target && msg.create) {
