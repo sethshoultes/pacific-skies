@@ -116,8 +116,7 @@ export class Room {
   start(pid) {
     const hostPid = [...this.clients.keys()][0];
     if (pid && pid !== hostPid && this.clients.size > 1) {
-      const c = this.clients.get(pid);
-      if (c) this.send(c, { t: 'error', error: 'Only the host can start the game' });
+      this.sendTo(pid, { t: 'error', error: 'Only the host can start the game' });
       return false;
     }
     if (this.state !== 'lobby') return false;
