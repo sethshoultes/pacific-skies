@@ -110,6 +110,17 @@ async function main() {
     await page.keyboard.up('d');
     await page.keyboard.up('Space');
 
+    // Regression check: #touch-controls starts `hidden` in the HTML and game.js only clears that
+    // attribute for a touch-capable device. A plain desktop browser (no coarse pointer, no touch)
+    // must never actually render it -- CSS `display: flex` on the bare selector would otherwise
+    // out-specificity the UA [hidden]{display:none} rule and show it regardless of the attribute.
+    log('checking #touch-controls stays hidden on a non-touch browser');
+    const touchControlsHidden = await page.evaluate(() => {
+      const el = document.querySelector('#touch-controls');
+      return el.hidden && getComputedStyle(el).display === 'none';
+    });
+    if (!touchControlsHidden) throw new Error('#touch-controls is visible on a non-touch browser (CSS is not honoring [hidden])');
+
     if (pageErrors.length) throw new Error(`page errors:\n${pageErrors.join('\n')}`);
     if (consoleErrors.length) throw new Error(`console errors:\n${consoleErrors.join('\n')}`);
     if (failedRequests.length) throw new Error(`failed requests:\n${failedRequests.join('\n')}`);

@@ -1,0 +1,13 @@
+{
+  "name": "Pacific Skies",
+  "short_name": "Pacific Skies",
+  "description": "A 1942-inspired vertical-scrolling arcade shooter with online co-op.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#06090f",
+  "theme_color": "#06090f",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

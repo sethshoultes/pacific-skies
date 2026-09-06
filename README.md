@@ -31,6 +31,12 @@ Requires Node.js 22.5+ (uses the built-in `node:sqlite`). Data lives in `./data/
 - **Loop-the-loop** — Shift or Q: flips the plane out of the plane of play for ~1.2s, invulnerable
   and unable to shoot. 3 loops per life; replenished on death or by the POW loop item.
 - **Mute** — M
+- **Touch** (phones/tablets) — an on-screen control layer appears over the lower part of the
+  canvas: a virtual joystick on the left, a big **FIRE** button (hold to autofire) and a **LOOP**
+  button (tap) on the right. You can also drag anywhere on the sky: the plane follows your finger's
+  movement (relative drag, so your thumb never covers the plane) and autofires while you touch.
+  The canvas scales to fit the screen in portrait or landscape; add `?touch=1` to the URL to force
+  the touch layer on a desktop for testing.
 
 ## How to play
 
@@ -56,6 +62,10 @@ Requires Node.js 22.5+ (uses the built-in `node:sqlite`). Data lives in `./data/
 - **Scoring**: kills, red-formation clears, bosses, and stage-clear bonus all add up; extra lives
   at score thresholds (30k/100k/200k/400k); a hi-score is shown on the title screen. Reach stage 1
   for a victory screen.
+- **Continues**: on game over you get an arcade-style "CONTINUE?" countdown. Inserting a coin (up
+  to 3 per room) puts you back on the same stage with fresh lives and a reset score; in co-op any
+  player in the room can insert the coin, and it revives everyone who is out of lives. Using one
+  unlocks the *Insert Coin* achievement.
 - **This slice**: stages 32–29 are hand-authored (including the stage-32 boss); stages 28–1 are a
   deterministic escalation of the same wave vocabulary (same seed -> same stage every time), so
   the whole 32-stage run is playable end to end today, ending in a victory screen at stage 1.
@@ -151,6 +161,28 @@ plus `shared/*.js` served under `/shared/`). Edit and refresh.
 `.github/workflows/deploy.yml` deploys `main` over SSH — inert with no effect until you configure
 `DEPLOY_HOST`, `DEPLOY_USER` and `DEPLOY_SSH_KEY` repo secrets, in which case it runs `$HOME/deploy.sh`
 on the target host if present.
+
+### Go-live checklist
+
+Nothing is live until the three deploy secrets exist, so in order:
+
+1. On the CloudPanel host, create a Node.js site for the game's domain, clone this repo into its
+   `htdocs/<domain>` directory as the site user, and install Node 22.5+ (nvm is picked up by the
+   deploy script if present) plus `pm2` (`npm i -g pm2`).
+2. Copy or symlink `deploy/deploy-cloudpanel.sh` to `$HOME/deploy.sh` for that user and run it once
+   by hand: it does `npm ci --omit=dev`, starts the `pacific-skies` pm2 process on `PORT` (default
+   3001) with `DATA_DIR=$HOME/data`, and polls `/api/health` until it answers. Run `pm2 startup` so
+   the process survives a reboot.
+3. Point the CloudPanel site's reverse proxy at `127.0.0.1:3001` (WebSockets on `/ws` must be
+   proxied too -- CloudPanel's Node.js site template already does this) and set `TRUST_PROXY=1` in
+   the pm2 environment so rate limits see real client IPs. Set `SKIES_ADMINS` to the usernames that
+   should see the admin dashboard; with it unset, nobody is an admin.
+4. In the GitHub repo settings add the secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` (and
+   `DEPLOY_PORT` if SSH isn't on 22). From then on every push to `main` that passes the unit tests
+   redeploys; `workflow_dispatch` on the Deploy workflow deploys any branch on demand.
+5. Verify with `E2E_BASE_URL=https://<your-domain> npm run e2e` from your machine (the forced
+   stage-clear step is expected to time out unless the server runs with `SKIES_DEBUG=1`, which
+   production should not).
 
 ### CloudPanel
 

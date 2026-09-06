@@ -4,7 +4,7 @@
 import {
   drawPixels, patternSize, PLAYER_UP, ESCORT, ENEMY_SMALL, ENEMY_MEDIUM, BOSS, POW_ICON,
   playerPalette, enemySmallPalette, enemyMediumPalette, bossPalette, powPalette,
-  drawWaveTile, drawIslandTile, drawCarrierTile, drawCloud, PALETTE,
+  drawWaveTile, drawIslandTile, drawCarrierTile, drawCloud, PALETTE, redFormationPalette,
 } from './sprites.js';
 import { WORLD_W, WORLD_H } from '../shared/constants.js';
 
@@ -65,9 +65,10 @@ function drawEscort(ctx, x, y, scale = 1.6) {
   const size = patternSize(ESCORT, scale);
   drawPixels(ctx, ESCORT, playerPalette(), x - size.w / 2, y - size.h / 2, scale);
 }
-function drawEnemySmall(ctx, x, y, scale = 2) {
+function drawEnemySmall(ctx, x, y, scale = 2, red = false) {
   const size = patternSize(ENEMY_SMALL, scale);
-  drawPixels(ctx, ENEMY_SMALL, enemySmallPalette(), x - size.w / 2, y - size.h / 2, scale);
+  // The red formation must read as red at a glance -- clearing all five is what drops the POW.
+  drawPixels(ctx, ENEMY_SMALL, red ? redFormationPalette() : enemySmallPalette(), x - size.w / 2, y - size.h / 2, scale);
 }
 function drawEnemyMedium(ctx, x, y, scale = 2.1) {
   const size = patternSize(ENEMY_MEDIUM, scale);
@@ -90,7 +91,7 @@ export function drawEntities(ctx, snap, blinkPlayers = new Set()) {
     if (e.type === 'boss') { drawBoss(ctx, e.x, e.y, 2.4); drawHealthBar(ctx, e.x, e.y - 44, e.hp, e.maxHp, 60); }
     else if (e.type === 'midboss') { drawEnemyMedium(ctx, e.x, e.y, 2.8); drawHealthBar(ctx, e.x, e.y - 32, e.hp, e.maxHp, 40); }
     else if (e.type === 'medium') drawEnemyMedium(ctx, e.x, e.y);
-    else drawEnemySmall(ctx, e.x, e.y);
+    else drawEnemySmall(ctx, e.x, e.y, 2, e.kind === 'red-formation');
   }
   for (const p of snap.players || []) {
     if (!p.alive) continue;
@@ -98,12 +99,45 @@ export function drawEntities(ctx, snap, blinkPlayers = new Set()) {
     if (p.side) { drawEscort(ctx, p.x - 20, p.y + 6); drawEscort(ctx, p.x + 20, p.y + 6); }
     ctx.save();
     if (p.looping) ctx.globalAlpha = 0.55;
+    // Banking: squash the sprite toward the direction of travel (p.bank is -1/0/1, set by the
+    // client from the plane's horizontal motion) so sideways moves read as a roll.
+    if (p.bank) { ctx.translate(p.x, p.y); ctx.scale(0.72, 1); ctx.translate(-p.x, -p.y); }
     drawPlane(ctx, p.x, p.y);
     ctx.restore();
     if (p.invuln && !p.looping) {
       ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.stroke();
     }
   }
+}
+
+/** Client-side explosion effects. Each entry is { x, y, size, t0 } (t0 in ms from performance.now());
+ *  an expanding flash ring plus pixel debris flung outward, all over about 450ms. Pure eye candy --
+ *  the authoritative sim doesn't know about them -- so they are derived by the client from entities
+ *  that vanished between two snapshots (see client/game.js). Returns the list minus finished ones. */
+export function drawExplosions(ctx, explosions, now) {
+  const DUR = 450;
+  const live = [];
+  for (const ex of explosions) {
+    const k = (now - ex.t0) / DUR;
+    if (k >= 1) continue;
+    live.push(ex);
+    const r = ex.size * (0.4 + k * 1.4);
+    ctx.save();
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = k < 0.35 ? '#ffffff' : PALETTE.flame;
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, r * 0.55, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = PALETTE.enemyShot; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2); ctx.stroke();
+    // debris: deterministic per explosion so it doesn't jitter frame to frame
+    ctx.fillStyle = k < 0.5 ? PALETTE.flame : PALETTE.hullDark;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + ex.x * 0.01;
+      const d = r * (1.1 + ((i * 7) % 3) * 0.25);
+      ctx.fillRect(Math.round(ex.x + Math.cos(a) * d) - 1, Math.round(ex.y + Math.sin(a) * d) - 1, 3, 3);
+    }
+    ctx.restore();
+  }
+  return live;
 }
 
 function drawHealthBar(ctx, x, y, hp, maxHp, w) {

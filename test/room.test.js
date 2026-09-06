@@ -10,6 +10,7 @@ import path from 'node:path';
 const dataDir = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
 process.env.DATA_DIR = dataDir;
 const { Room } = await import('../server/game/room.js');
+const { Lobby } = await import('../server/game/lobby.js');
 const { db } = await import('../server/db.js');
 
 // Belt-and-suspenders cleanup: `after` handles the normal exit path, `process.on('exit')` covers
@@ -174,4 +175,85 @@ test('onStart also fires for the ready-countdown auto-start, not just an explici
   assert.equal(fired, 1, 'must fire once the auto-start countdown elapses');
   assert.equal(room.state, 'playing');
   clearInterval(room.tickTimer);
+});
+
+test('room info marks the host and carries each player pid so the client can gate the Start button', () => {
+  const room = new Room({ id: 'r-host', name: 'Host', seed: 's' });
+  room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A', guestId: null });
+  room.join(fakeClient().ws, { pid: 'b', user: null, name: 'B', guestId: null });
+  assert.deepEqual(room.info().players.map((p) => [p.pid, p.host]), [['a', true], ['b', false]]);
+});
+
+test('an arcade continue after game over resumes the same room on the same stage, limited to 3 credits', () => {
+  const room = new Room({ id: 'r-cont', name: 'Cont', seed: 's' });
+  const c = fakeClient();
+  room.join(c.ws, { pid: 'p', user: null, name: 'P', guestId: null });
+  assert.equal(room.continueGame('p'), false, 'no continue before the game is even over');
+  assert.equal(room.start('p'), true);
+  const player = room.sim.players.get('p');
+  const runOut = () => { player.lives = 1; room.sim._killPlayer(player); room._tick(); };
+  runOut();
+  assert.equal(room.state, 'over');
+  const over = c.sent.filter((m) => m.t === 'gameover').at(-1);
+  assert.equal(over.reason, 'gameover');
+  assert.equal(over.continuesLeft, 3);
+  const stage = room.sim.stageNumber;
+
+  assert.equal(room.continueGame('nobody'), false, 'only a player in the room can insert a coin');
+  assert.equal(room.continueGame('p'), true);
+  assert.equal(room.state, 'playing');
+  assert.equal(room.sim.stageNumber, stage, 'the stage is kept');
+  assert.equal(player.lives, 3);
+  const cont = c.sent.filter((m) => m.t === 'continued').at(-1);
+  assert.equal(cont.continuesLeft, 2);
+  assert.equal(room.continueGame('p'), false, 'cannot continue while playing');
+
+  runOut(); assert.equal(room.continueGame('p'), true);
+  runOut(); assert.equal(room.continueGame('p'), true);
+  runOut();
+  assert.equal(c.sent.filter((m) => m.t === 'gameover').at(-1).continuesLeft, 0);
+  assert.equal(room.continueGame('p'), false, 'no fourth credit');
+  assert.ok(c.sent.some((m) => m.t === 'error' && /continues/i.test(m.error)));
+  clearInterval(room.tickTimer);
+});
+
+test('a victory cannot be continued', () => {
+  const room = new Room({ id: 'r-vic', name: 'Vic', seed: 's' });
+  const c = fakeClient();
+  room.join(c.ws, { pid: 'p', user: null, name: 'P', guestId: null });
+  room.start('p');
+  room.debugAction('win-game'); room._tick();
+  assert.equal(room.state, 'over');
+  assert.equal(c.sent.filter((m) => m.t === 'gameover').at(-1).continuesLeft, 0);
+  assert.equal(room.continueGame('p'), false);
+});
+
+test('a run that scored nothing (e.g. a wasted continue) is not recorded as a leaderboard row', () => {
+  const room = new Room({ id: 'r-zero', name: 'Zero', seed: 's' });
+  const c = fakeClient();
+  room.join(c.ws, { pid: 'p', user: { id: 4242, username: 'zero' }, name: 'zero', guestId: null });
+  room.start('p');
+  const player = room.sim.players.get('p');
+  const runsFor = () => db.prepare('SELECT COUNT(*) AS n FROM runs WHERE user_id = 4242').get().n;
+  player.lives = 1; room.sim._killPlayer(player); room._tick();
+  assert.equal(room.state, 'over');
+  assert.equal(runsFor(), 0, 'zero score, zero kills: nothing worth recording');
+  room.continueGame('p');
+  player.score = 300; player.kills = 1;
+  player.lives = 1; room.sim._killPlayer(player); room._tick();
+  assert.equal(runsFor(), 1, 'a credit that scored is recorded');
+  clearInterval(room.tickTimer);
+});
+
+test('the public room list omits per-player ids and the host flag; in-room info keeps them', () => {
+  const lobby = new Lobby();
+  const room = lobby.create({ name: 'Public', isPublic: true });
+  room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A', guestId: null });
+  room.join(fakeClient().ws, { pid: 'b', user: null, name: 'B', guestId: null });
+  const listed = lobby.list().find((r) => r.id === room.id);
+  assert.ok(listed, 'a public lobby room is listed');
+  assert.deepEqual(listed.players, [{ name: 'A', ready: false, away: false }, { name: 'B', ready: false, away: false }]);
+  for (const p of listed.players) { assert.equal('pid' in p, false); assert.equal('host' in p, false); }
+  assert.deepEqual(room.info().players.map((p) => [p.pid, p.host]), [['a', true], ['b', false]]);
+  room.close();
 });

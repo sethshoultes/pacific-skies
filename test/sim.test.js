@@ -284,3 +284,73 @@ test('shotsFired counts every bullet spawned so four-way volleys cannot exceed 1
   assert.equal(sim.stats.shotsFired, 6);
   assert.equal(sim.bullets.filter((b) => b.owner === 'p1').length, 6);
 });
+
+test('v-sweep formations fly as a chevron with the middle plane leading, not a vertical column', () => {
+  const sim = new Sim({ seed: 'v' });
+  sim._spawnWave({ at: 0, spawn: 'v-sweep', count: 5, x: 0.1, params: { dir: 1 } });
+  const xs = sim.enemies.map((e) => e.x);
+  assert.ok(new Set(xs).size > 1, 'planes must not share one x');
+  const lead = Math.max(...xs);
+  assert.equal(xs[2], lead, 'the middle plane leads when sweeping right');
+  assert.ok(xs[0] < xs[1] && xs[1] < xs[2] && xs[3] < xs[2] && xs[4] < xs[3], 'wings trail symmetrically');
+  const ys = sim.enemies.map((e) => e.y);
+  assert.ok(new Set(ys).size === 5, 'each plane keeps its own row');
+});
+
+test('bosses and mid-bosses hold fire until they are on station (visible), then open up', () => {
+  for (const spawn of ['midboss', 'boss']) {
+    const sim = new Sim({ seed: 'b-' + spawn });
+    sim.addPlayer('p1');
+    sim._spawnWave({ at: 0, spawn, count: 1, x: 0.5 });
+    const e = sim.enemies[0];
+    // A few ticks in, still above the top edge: no shots yet.
+    stepN(sim, 5);
+    assert.ok(e.y < e.holdY, `${spawn} should still be flying in`);
+    assert.equal(sim.enemyBullets.length, 0, `${spawn} must not fire while off station`);
+    // It must reach its hold position in a handful of seconds, not 15+.
+    stepN(sim, 30 * 5);
+    assert.ok(e.y >= e.holdY, `${spawn} should be on station within 5s (y=${e.y}, holdY=${e.holdY})`);
+    stepN(sim, 30 * 2);
+    assert.ok(sim.enemyBullets.length > 0, `${spawn} fires once on station`);
+  }
+});
+
+test('continueRun gives players who are out of lives a fresh set, resets their score, and clears enemy shots', () => {
+  const sim = new Sim({ seed: 'cont' });
+  const p = sim.addPlayer('p1');
+  const q2 = sim.addPlayer('p2', { slot: 2 });
+  p.score = 5000; p.lives = 1; p.side = true;
+  sim.enemyBullets.push({ id: 1, x: 10, y: 10, vx: 0, vy: 1 });
+  sim._killPlayer(p);
+  assert.equal(p.lives, 0); assert.equal(p.alive, false);
+  assert.ok(sim.allPlayersOut() === false, 'p2 is still alive');
+  q2.score = 777;
+  // Stale control state from the moment of death must not leak into the new life.
+  p.looping = true; p.loopEndAt = 999; p.loopCooldownUntil = 999; p.prevLoopInput = true; p.shotCooldown = 500;
+  p.input = { up: true, down: false, left: true, right: false, fire: true, loop: true };
+  const events = [];
+  sim.onEvent = (ev) => events.push(ev);
+  const pids = sim.continueRun();
+  assert.deepEqual(pids, ['p1']);
+  assert.equal(p.alive, true); assert.equal(p.lives, 3); assert.equal(p.score, 0); assert.equal(p.side, false);
+  assert.equal(p.looping, false); assert.equal(p.loopEndAt, 0); assert.equal(p.loopCooldownUntil, 0);
+  assert.equal(p.prevLoopInput, false); assert.equal(p.shotCooldown, 0);
+  assert.deepEqual(p.input, { up: false, down: false, left: false, right: false, fire: false, loop: false });
+  assert.ok(sim.time < p.invulnUntil, 'respawn grants the usual invulnerability window');
+  assert.equal(q2.score, 777, 'players still in the game are untouched');
+  assert.equal(sim.enemyBullets.length, 0);
+  assert.deepEqual(events.map((e) => e.t), ['continue']);
+  assert.deepEqual(sim.continueRun(), [], 'nothing to continue when nobody is out');
+});
+
+test('snapshot bullets carry ids so the client can interpolate them between ticks', () => {
+  const sim = new Sim({ seed: 'ids' });
+  const p = sim.addPlayer('p1');
+  p.input.fire = true; sim.step();
+  sim._spawnWave({ at: 0, spawn: 'medium', count: 1, x: 0.5 });
+  sim.enemies[0].y = 100; sim.enemies[0].fireCooldown = 0; sim.step();
+  const s = sim.snapshot();
+  assert.ok(s.bullets.length > 0 && s.bullets.every((b) => Number.isInteger(b.id)));
+  assert.ok(s.enemyBullets.length > 0 && s.enemyBullets.every((b) => Number.isInteger(b.id)));
+  assert.ok(s.enemies.every((e) => typeof e.kind === 'string'), 'kind is exposed so red formations can be drawn red');
+});

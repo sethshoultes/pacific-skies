@@ -178,7 +178,10 @@ export class Sim {
         const dir = w.params?.dir ?? 1;
         for (let i = 0; i < w.count; i++) {
           const off = (i - (w.count - 1) / 2) * 22;
-          this.enemies.push(this._mkSmall('v-sweep', dir > 0 ? -20 : WORLD_W + 20, 40 + off, { vx: dir * 70 * diff.speedMul, vy: 30 * diff.speedMul }));
+          // Chevron: the middle plane leads and each wing trails further behind along the direction
+          // of travel, so the formation reads as a V sweeping in from the side, not a column.
+          const trail = Math.abs(i - (w.count - 1) / 2) * 20;
+          this.enemies.push(this._mkSmall('v-sweep', (dir > 0 ? -20 : WORLD_W + 20) - dir * trail, 40 + off, { vx: dir * 70 * diff.speedMul, vy: 30 * diff.speedMul }));
         }
         break;
       }
@@ -217,10 +220,10 @@ export class Sim {
     return { id: uid(), kind: 'medium', type: 'medium', x, y, vy: 40 * diff.speedMul, hp: ENEMY_MEDIUM_HP, maxHp: ENEMY_MEDIUM_HP, age: 0, fireCooldown: 1.5 / diff.fireRateMul };
   }
   _mkMidboss(x, y, diff) {
-    return { id: uid(), kind: 'midboss', type: 'midboss', x, y, vy: 18 * diff.speedMul, vx: 30, hp: ENEMY_MIDBOSS_HP, maxHp: ENEMY_MIDBOSS_HP, age: 0, fireCooldown: 1, dir: 1, holdY: 110 };
+    return { id: uid(), kind: 'midboss', type: 'midboss', x, y, vy: 48 * diff.speedMul, vx: 30, hp: ENEMY_MIDBOSS_HP, maxHp: ENEMY_MIDBOSS_HP, age: 0, fireCooldown: 1, dir: 1, holdY: 110 };
   }
   _mkBoss(x, y, diff) {
-    return { id: uid(), kind: 'boss', type: 'boss', x, y, vy: 12 * diff.speedMul, vx: 40, hp: ENEMY_BOSS_HP, maxHp: ENEMY_BOSS_HP, age: 0, fireCooldown: 1, dir: 1, holdY: 130, turrets: 3 };
+    return { id: uid(), kind: 'boss', type: 'boss', x, y, vy: 45 * diff.speedMul, vx: 40, hp: ENEMY_BOSS_HP, maxHp: ENEMY_BOSS_HP, age: 0, fireCooldown: 1, dir: 1, holdY: 130, turrets: 3 };
   }
 
   // ---------------- enemies ----------------
@@ -255,14 +258,16 @@ export class Sim {
           }
           break;
         case 'midboss':
-          if (e.y < e.holdY) e.y += e.vy * DT;
-          else { e.x += e.dir * 30 * DT; if (e.x < 40 || e.x > WORLD_W - 40) e.dir *= -1; }
+          // Fly in, then patrol side to side at holdY. Guns stay silent until on station: firing
+          // from above the top edge means unavoidable shots from an enemy the player can't see.
+          if (e.y < e.holdY) { e.y += e.vy * DT; break; }
+          e.x += e.dir * 30 * DT; if (e.x < 40 || e.x > WORLD_W - 40) e.dir *= -1;
           e.fireCooldown -= DT;
           if (e.fireCooldown <= 0) { this._enemyAimedShot(e, diff); e.fireCooldown = 1.1 / diff.fireRateMul; }
           break;
         case 'boss':
-          if (e.y < e.holdY) e.y += e.vy * DT;
-          else { e.x += e.dir * 25 * DT; if (e.x < 50 || e.x > WORLD_W - 50) e.dir *= -1; }
+          if (e.y < e.holdY) { e.y += e.vy * DT; break; }
+          e.x += e.dir * 25 * DT; if (e.x < 50 || e.x > WORLD_W - 50) e.dir *= -1;
           e.fireCooldown -= DT;
           if (e.fireCooldown <= 0) {
             for (let k = 0; k < e.turrets; k++) {
@@ -411,6 +416,12 @@ export class Sim {
     p.alive = true; p.x = Sim._spawnX(p.slot); p.y = WORLD_H - 80;
     p.invulnUntil = this.time + RESPAWN_INVULN_MS / 1000;
     p.respawnAt = null;
+    // A fresh life starts from a clean control state: no loop in progress or on cooldown, no shot
+    // cooldown, no held input carried over from the moment of death (matters most for a continue,
+    // where the player may have been sitting on the game-over screen for a while).
+    p.looping = false; p.loopEndAt = 0; p.loopCooldownUntil = 0; p.prevLoopInput = false;
+    p.shotCooldown = 0;
+    p.input = { up: false, down: false, left: false, right: false, fire: false, loop: false };
   }
 
   _spawnPow(x, y) {
@@ -493,6 +504,29 @@ export class Sim {
     this.onEvent({ t: 'stage-start', stage: this.stageNumber, name: this.stage.name });
   }
 
+  /** Arcade continue ("insert coin"): every player who is out of lives gets a fresh set, their
+   *  score reset (the arcade convention -- the stage is kept, the score is not), and respawns into
+   *  the stage as it stands. Enemy shots are wiped so the respawn isn't instantly fatal. Returns
+   *  the pids that were continued (empty if nobody was out). */
+  continueRun() {
+    const out = [];
+    for (const p of this.players.values()) {
+      if (p.alive || p.lives > 0) continue;
+      p.lives = START_LIVES; p.score = 0; p.loops = START_LOOPS;
+      p.side = false; p.fourway = false;
+      p.kills = 0; p.shotsFired = 0; p.hits = 0; p.hitThisStage = false;
+      // respawnPlayer() clears looping/loop-timer/shotCooldown/held-input state left over from the
+      // moment of death, so a continue doesn't need to repeat that here.
+      this.respawnPlayer(p);
+      out.push(p.pid);
+    }
+    if (out.length) {
+      this.enemyBullets = [];
+      for (const pid of out) this.onEvent({ t: 'continue', pid });
+    }
+    return out;
+  }
+
   allPlayersOut() { return this.players.size > 0 && [...this.players.values()].every((p) => !p.alive && p.lives <= 0); }
 
   /** Serializable snapshot for the client renderer. */
@@ -503,8 +537,9 @@ export class Sim {
         pid: p.pid, x: p.x, y: p.y, alive: p.alive, lives: p.lives, score: p.score, loops: p.loops,
         looping: p.looping, invuln: this.time < p.invulnUntil, side: p.side, fourway: p.fourway, slot: p.slot,
       })),
-      bullets: this.bullets.map((b) => ({ x: b.x, y: b.y })),
-      enemyBullets: this.enemyBullets.map((b) => ({ x: b.x, y: b.y })),
+      // ids let the client match entities across consecutive snapshots and interpolate their motion
+      bullets: this.bullets.map((b) => ({ id: b.id, x: b.x, y: b.y })),
+      enemyBullets: this.enemyBullets.map((b) => ({ id: b.id, x: b.x, y: b.y })),
       enemies: this.enemies.map((e) => ({ id: e.id, kind: e.kind, type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp })),
       powItems: this.powItems.map((it) => ({ x: it.x, y: it.y, type: it.type })),
     };

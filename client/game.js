@@ -3,14 +3,15 @@
 // this file just sends input and renders the latest snapshot (client/render.js).
 import { renderNav, api, token, toast, esc } from './common.js';
 import { initAudio, sfx, setMuted, isMuted } from './audio.js';
-import { createOcean, drawBackground, drawEntities } from './render.js';
+import { createOcean, drawBackground, drawEntities, drawExplosions } from './render.js';
+import { WORLD_W, WORLD_H } from '../shared/constants.js';
 
 renderNav('play');
 initAudio();
 
 // ---------------- screens ----------------
 const screens = { title: q('#title'), room: q('#roomscreen'), game: q('#game') };
-function show(name) { for (const k in screens) screens[k].classList.toggle('on', k === name); }
+function show(name) { for (const k in screens) screens[k].classList.toggle('on', k === name); document.body.classList.toggle('in-game', name === 'game'); }
 function q(sel) { return document.querySelector(sel); }
 
 // ---------------- attract mode demo flight (title screen) ----------------
@@ -49,6 +50,7 @@ let ws = null;
 let myPid = null;
 let roomState = null;
 let latestSnap = null;
+let lastJoined = null; // { roomId, pid, resumeToken } -- re-saved after a continue
 
 function connect() {
   // A double-click on quick/create/join would otherwise leak the previous socket (and a ghost
@@ -91,6 +93,7 @@ function handleMessage(msg) {
   switch (msg.t) {
     case 'joined':
       myPid = msg.pid; roomState = msg.room;
+      lastJoined = { roomId: msg.room.id, pid: msg.pid, resumeToken: msg.resumeToken };
       saveResume(msg.room.id, msg.pid, msg.resumeToken);
       if (msg.room.state === 'playing') {
         // Resumed back into a game already in progress -- go straight to the live view instead
@@ -106,6 +109,7 @@ function handleMessage(msg) {
       break;
     case 'start':
       roomState = msg.room; show('game'); attractRunning = false; beginGameLoop();
+      banner(`STAGE ${latestSnap?.stageNumber ?? 32}`, latestSnap?.stageName || 'Midway');
       break;
     case 'chat': {
       const log = q('#rs-chatlog');
@@ -113,10 +117,11 @@ function handleMessage(msg) {
       log.appendChild(line); log.scrollTop = log.scrollHeight;
       break;
     }
-    case 'snap': latestSnap = msg.s; onSnap(msg.s); break;
+    case 'snap': pushSnap(msg.s); onSnap(msg.s); break;
     case 'event': onEvent(msg.event); break;
     case 'achievement': toast('Achievement unlocked', msg.achievement.name, 'ach'); sfx('1up'); break;
     case 'gameover': onGameOver(msg); break;
+    case 'continued': onContinued(msg); break;
     case 'kicked': clearResume(); toast('Kicked', 'You were removed from the room.'); location.href = '/'; break;
     case 'error': toast('Error', msg.error); break;
     default: break;
@@ -125,7 +130,80 @@ function handleMessage(msg) {
 
 let ocean = createOcean(3);
 let scrollY = 0;
+let explosions = [];
+
+// ---- snapshot interpolation: the server ticks at 30Hz but the screen refreshes at 60+, so we
+// render one tick behind, blending the previous snapshot toward the latest by the time elapsed
+// since it arrived. Entities are matched by id (enemies, bullets) or pid (players); anything only
+// present in the latest snapshot is drawn where it is.
+let snapPrev = null, snapLast = null, tPrev = 0, tLast = 0;
+const prevX = new Map(); // pid -> x from the previous snapshot, for banking
+function pushSnap(s) {
+  snapPrev = snapLast; tPrev = tLast; snapLast = s; tLast = performance.now(); latestSnap = s;
+}
+function lerpList(prev, last, key, a) {
+  if (!prev) return last;
+  const byId = new Map(prev.map((e) => [e[key], e]));
+  return last.map((e) => {
+    const o = byId.get(e[key]);
+    return o ? { ...e, x: o.x + (e.x - o.x) * a, y: o.y + (e.y - o.y) * a } : e;
+  });
+}
+function interpolatedSnap() {
+  if (!snapLast) return null;
+  const span = Math.max(1, tLast - tPrev);
+  const a = snapPrev ? Math.min(1, Math.max(0, (performance.now() - tLast) / span)) : 1;
+  const players = lerpList(snapPrev?.players, snapLast.players, 'pid', a).map((p) => {
+    const px = prevX.get(p.pid);
+    const dx = px == null ? 0 : p.x - px;
+    return { ...p, bank: dx > 0.3 ? 1 : dx < -0.3 ? -1 : 0 };
+  });
+  for (const p of players) prevX.set(p.pid, p.x);
+  return {
+    ...snapLast,
+    players,
+    enemies: lerpList(snapPrev?.enemies, snapLast.enemies, 'id', a),
+    bullets: lerpList(snapPrev?.bullets, snapLast.bullets, 'id', a),
+    enemyBullets: lerpList(snapPrev?.enemyBullets, snapLast.enemyBullets, 'id', a),
+  };
+}
+
+// ---- in-game banners (stage intro, boss warning) ----
+let bannerTimer = null;
+function banner(title, sub = '', kind = '') {
+  q('#game .banner')?.remove();
+  const el = document.createElement('div');
+  el.className = 'banner ' + kind;
+  el.innerHTML = `<div class="bt"></div><div class="bs"></div>`;
+  el.querySelector('.bt').textContent = title; el.querySelector('.bs').textContent = sub;
+  q('#game').appendChild(el);
+  if (bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => el.remove(), 2600);
+}
+let prevEnemies = new Map(); // id -> {x, y, type}
+let prevAlive = new Map();   // pid -> {x, y}
+const onScreen = (x, y) => x > 0 && x < WORLD_W && y > 0 && y < WORLD_H;
+function trackExplosions(s) {
+  const now = performance.now();
+  const seen = new Map();
+  for (const e of s.enemies) seen.set(e.id, e);
+  // An enemy that was on screen last snapshot and is gone now was shot down (off-screen culls
+  // happen well past the world edge, so they never qualify).
+  for (const [id, e] of prevEnemies) {
+    if (!seen.has(id) && onScreen(e.x, e.y)) {
+      explosions.push({ x: e.x, y: e.y, size: e.type === 'boss' ? 34 : e.type === 'midboss' ? 24 : e.type === 'medium' ? 16 : 10, t0: now });
+    }
+  }
+  prevEnemies = seen;
+  const aliveNow = new Map();
+  for (const p of s.players) {
+    if (p.alive) aliveNow.set(p.pid, { x: p.x, y: p.y });
+    else if (prevAlive.has(p.pid)) { const at = prevAlive.get(p.pid); explosions.push({ x: at.x, y: at.y, size: 18, t0: now }); }
+  }
+  prevAlive = aliveNow;
+}
 function onSnap(s) {
+  trackExplosions(s);
   q('#hud-stage').textContent = s.stageNumber;
   q('#hud-stagename').textContent = s.stageName || '';
   const me = s.players.find((p) => p.pid === myPid);
@@ -139,9 +217,12 @@ function onSnap(s) {
 function onEvent(ev) {
   switch (ev.t) {
     case 'shot': sfx('shoot'); break;
+    case 'hit': sfx('hit'); break;
     case 'kill': sfx('kill'); break;
     case 'boss-down': case 'midboss-down': sfx('explosion'); break;
-    case 'boss-appear': case 'midboss-appear': sfx('boss-alarm'); break;
+    case 'boss-appear': sfx('boss-alarm'); banner('WARNING', 'Boss bomber inbound', 'warn'); break;
+    case 'midboss-appear': sfx('boss-alarm'); banner('WARNING', 'Heavy bomber inbound', 'warn'); break;
+    case 'stage-start': banner(`STAGE ${ev.stage}`, ev.name || ''); break;
     case 'loop': sfx('loop'); break;
     case 'pow': sfx('pow'); break;
     case 'bomb': sfx('bomb'); break;
@@ -178,12 +259,38 @@ function onGameOver(msg) {
   clearResume();
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
+  overlay.id = 'gameover';
   const title = msg.reason === 'victory' ? 'VICTORY — TOKYO SECURED' : 'GAME OVER';
+  const canContinue = msg.reason === 'gameover' && msg.continuesLeft > 0;
   overlay.innerHTML = `<h2>${title}</h2><p class="muted">Thanks for flying with Pacific Skies.</p>
-    <button class="primary" id="go-again">Play Again</button>`;
+    ${canContinue ? `<div class="continue"><div class="blink">CONTINUE? <b id="go-count">9</b></div>
+      <button class="primary" id="go-continue">Insert Coin (${msg.continuesLeft} left)</button></div>` : ''}
+    <button id="go-again">Play Again</button>`;
   q('#game').appendChild(overlay);
   overlay.querySelector('#go-again').onclick = () => location.href = '/';
+  if (canContinue) {
+    // Arcade-style: the offer counts down from 9; when it hits 0 only Play Again remains.
+    let n = 9;
+    const timer = setInterval(() => {
+      n -= 1;
+      const el = overlay.querySelector('#go-count');
+      if (!el) { clearInterval(timer); return; }
+      el.textContent = n;
+      if (n <= 0) { clearInterval(timer); overlay.querySelector('.continue')?.remove(); }
+    }, 1000);
+    overlay.querySelector('#go-continue').onclick = () => { clearInterval(timer); send({ t: 'continue' }); };
+  }
   sfx(msg.reason === 'victory' ? 'victory' : 'gameover');
+}
+
+function onContinued(msg) {
+  roomState = msg.room;
+  q('#gameover')?.remove();
+  // The run is live again, so the resume credentials matter again too.
+  if (lastJoined) saveResume(lastJoined.roomId, lastJoined.pid, lastJoined.resumeToken);
+  sfx('coin');
+  toast('Credit accepted', msg.continuesLeft > 0 ? `${msg.continuesLeft} continue${msg.continuesLeft === 1 ? '' : 's'} left.` : 'Last credit. Make it count.');
+  beginGameLoop();
 }
 
 // ---------------- room screen ----------------
@@ -193,7 +300,13 @@ function renderRoom() {
   q('#rs-id').textContent = '#' + roomState.id;
   q('#rs-link').textContent = location.origin + '/?room=' + roomState.id;
   q('#rs-link').href = '/?room=' + roomState.id;
-  q('#rs-roster').innerHTML = roomState.players.map((p) => `<div class="roster-row"><span>${esc(p.name)}</span><span class="${p.ready ? 'ready' : 'notready'}">${p.ready ? 'READY' : 'waiting'}</span></div>`).join('');
+  q('#rs-roster').innerHTML = roomState.players.map((p) => `<div class="roster-row"><span>${esc(p.name)}${p.host ? ' <span class="muted">(host)</span>' : ''}${p.away ? ' <span class="muted">(away)</span>' : ''}</span><span class="${p.ready ? 'ready' : 'notready'}">${p.ready ? 'READY' : 'waiting'}</span></div>`).join('');
+  // The server only honours a direct start from the host (everyone else starts via ready-up and
+  // the countdown), so only show the button to the player it will actually work for.
+  const me = roomState.players.find((p) => p.pid === myPid);
+  const isHost = !me || me.host || roomState.players.length <= 1;
+  q('#rs-start').hidden = !isHost;
+  q('#rs-hint').textContent = isHost ? '' : 'Ready up -- the host starts, or the game auto-starts when everyone is ready.';
 }
 
 q('#rs-ready').addEventListener('click', function () {
@@ -250,8 +363,61 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
+// ---- touch controls. On coarse-pointer devices (or ?touch=1) an on-screen layer appears over
+// the lower part of the canvas: a virtual joystick on the left, FIRE (hold) and LOOP (tap) on the
+// right. Dragging anywhere on the sky itself also works -- relative drag: the plane moves by the
+// finger's displacement (slightly amplified), so the thumb never has to sit on top of the plane.
+// Each element handles its own touches, so the stick and the buttons work simultaneously.
+const touch = { drag: false, tx: 0, ty: 0, ox: 0, oy: 0, px: 0, py: 0, sx: 0, sy: 0, stick: false, fire: false, loop: false };
+const TOUCH_UI = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || new URLSearchParams(location.search).get('touch') === '1';
+if (TOUCH_UI) q('#touch-controls').hidden = false;
+
+function canvasPoint(t) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (t.clientX - r.left) * (WORLD_W / r.width), y: (t.clientY - r.top) * (WORLD_H / r.height) };
+}
+function onCanvasTouch(e) {
+  if (!screens.game.classList.contains('on')) return;
+  e.preventDefault();
+  if (e.touches.length === 0) { touch.drag = false; return; }
+  const p = canvasPoint(e.touches[0]);
+  if (e.type === 'touchstart') {
+    const me = latestSnap?.players.find((pl) => pl.pid === myPid);
+    touch.ox = p.x; touch.oy = p.y; touch.px = me?.x ?? p.x; touch.py = me?.y ?? p.y;
+    if (e.touches.length >= 2) touch.loop = true;
+  }
+  touch.drag = true;
+  touch.tx = touch.px + (p.x - touch.ox) * 1.25;
+  touch.ty = touch.py + (p.y - touch.oy) * 1.25;
+}
+for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) canvas.addEventListener(ev, onCanvasTouch, { passive: false });
+
+// virtual joystick: vector from the pad centre, normalised to the pad radius, 8-way with a dead zone
+const stickEl = q('#tc-stick'), knobEl = q('#tc-knob');
+function onStick(e) {
+  e.preventDefault();
+  if (e.touches.length === 0) { touch.stick = false; touch.sx = 0; touch.sy = 0; knobEl.style.transform = ''; return; }
+  const r = stickEl.getBoundingClientRect();
+  const t = e.targetTouches[0] || e.touches[0];
+  const radius = r.width / 2;
+  let dx = (t.clientX - (r.left + radius)) / radius, dy = (t.clientY - (r.top + radius)) / radius;
+  const len = Math.hypot(dx, dy);
+  if (len > 1) { dx /= len; dy /= len; }
+  touch.stick = true; touch.sx = dx; touch.sy = dy;
+  knobEl.style.transform = `translate(${dx * radius * 0.6}px, ${dy * radius * 0.6}px)`;
+}
+for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) stickEl.addEventListener(ev, onStick, { passive: false });
+
+const fireBtn = q('#tc-fire'), loopBtn = q('#tc-loop');
+const hold = (el, on, off) => {
+  for (const ev of ['touchstart', 'pointerdown']) el.addEventListener(ev, (e) => { e.preventDefault(); el.classList.add('held'); on(); }, { passive: false });
+  for (const ev of ['touchend', 'touchcancel', 'pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, (e) => { e.preventDefault(); el.classList.remove('held'); off(); }, { passive: false });
+};
+hold(fireBtn, () => { touch.fire = true; }, () => { touch.fire = false; });
+hold(loopBtn, () => { touch.loop = true; }, () => {});
+
 function currentInput() {
-  return {
+  const input = {
     up: keys.has('KeyW') || keys.has('ArrowUp'),
     down: keys.has('KeyS') || keys.has('ArrowDown'),
     left: keys.has('KeyA') || keys.has('ArrowLeft'),
@@ -259,21 +425,43 @@ function currentInput() {
     fire: keys.has('Space'),
     loop: keys.has('ShiftLeft') || keys.has('ShiftRight') || keys.has('KeyQ'),
   };
+  if (touch.stick) {
+    const dead = 0.25;
+    if (touch.sx < -dead) input.left = true; else if (touch.sx > dead) input.right = true;
+    if (touch.sy < -dead) input.up = true; else if (touch.sy > dead) input.down = true;
+  }
+  if (touch.drag) {
+    const me = latestSnap?.players.find((p) => p.pid === myPid);
+    if (me) {
+      const dead = 5;
+      if (touch.tx < me.x - dead) input.left = true; else if (touch.tx > me.x + dead) input.right = true;
+      if (touch.ty < me.y - dead) input.up = true; else if (touch.ty > me.y + dead) input.down = true;
+    }
+    input.fire = true; // dragging on the sky autofires; the FIRE button is for joystick players
+  }
+  if (touch.fire) input.fire = true;
+  if (touch.loop) { input.loop = true; touch.loop = false; }
+  return input;
 }
 
 let running = false;
 let inputTimer = null;
+let renderLoopStarted = false;
 function beginGameLoop() {
   running = true;
   if (inputTimer) clearInterval(inputTimer);
   inputTimer = setInterval(() => { if (running) send({ t: 'input', ...currentInput() }); }, 1000 / 30);
-  requestAnimationFrame(renderFrame);
+  // renderFrame re-schedules itself forever, so start the chain once; a continue (or any other
+  // re-entry) must only restart the input interval, or every call would add a concurrent render loop.
+  if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderFrame); }
 }
 function renderFrame(ts) {
   if (screens.game.classList.contains('on')) {
     scrollY += 2;
     drawBackground(ctx, ocean, scrollY, ts / 1000);
-    if (latestSnap) drawEntities(ctx, latestSnap);
+    const snap = interpolatedSnap();
+    if (snap) drawEntities(ctx, snap);
+    if (explosions.length) explosions = drawExplosions(ctx, explosions, performance.now());
   }
   requestAnimationFrame(renderFrame);
 }
