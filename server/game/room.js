@@ -32,7 +32,7 @@ export class Room {
     return {
       id: this.id, name: this.name, isPublic: this.isPublic, state: this.state,
       playerCount: this.playerCount, maxPlayers: MAX_PLAYERS,
-      players: [...this.clients.values()].map((c) => ({ name: c.name, ready: c.ready, away: c.away })),
+      players: [...this.clients.entries()].map(([pid, c], i) => ({ pid, name: c.name, ready: c.ready, away: c.away, host: i === 0 })),
     };
   }
 
@@ -111,18 +111,20 @@ export class Room {
     }
   }
 
+  /** Start the flight. Returns true if the game actually started, false if the request was a
+   *  no-op (already started, or a non-host asked while others are in the room). */
   start(pid) {
     const hostPid = [...this.clients.keys()][0];
-    if (pid && pid !== hostPid && this.clients.size > 1) {
-      // Non-host may only trigger start indirectly via ready-up/auto-start, not directly, unless
-      // they're playing solo.
-    }
-    if (this.state !== 'lobby') return;
+    // Only the host (first-joined client) may start a multi-player room directly. Everyone else
+    // triggers the start indirectly via ready-up/auto-start. A solo player is always the host.
+    if (pid && pid !== hostPid && this.clients.size > 1) return false;
+    if (this.state !== 'lobby') return false;
     if (this.countdown) { clearInterval(this.countdown); this.countdown = null; }
     this.state = 'playing';
     this.startedAt = Date.now();
     this.broadcast({ t: 'start', room: this.info() });
     this.tickTimer = setInterval(() => this._tick(), 1000 / TICK_RATE);
+    return true;
   }
 
   handleInput(pid, msg) { this.sim.setInput(pid, msg); }

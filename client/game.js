@@ -158,7 +158,12 @@ function renderRoom() {
   q('#rs-id').textContent = '#' + roomState.id;
   q('#rs-link').textContent = location.origin + '/?room=' + roomState.id;
   q('#rs-link').href = '/?room=' + roomState.id;
-  q('#rs-roster').innerHTML = roomState.players.map((p) => `<div class="roster-row"><span>${esc(p.name)}</span><span class="${p.ready ? 'ready' : 'notready'}">${p.ready ? 'READY' : 'waiting'}</span></div>`).join('');
+  q('#rs-roster').innerHTML = roomState.players.map((p) => `<div class="roster-row"><span>${esc(p.name)}${p.host ? ' <small>(host)</small>' : ''}</span><span class="${p.ready ? 'ready' : 'notready'}">${p.ready ? 'READY' : 'waiting'}</span></div>`).join('');
+  // Only the host may start directly; everyone else starts via ready-up/auto-start countdown.
+  const me = roomState.players.find((p) => p.pid === myPid);
+  const isHost = !me || me.host || roomState.players.length <= 1;
+  q('#rs-start').hidden = !isHost;
+  q('#rs-start').title = isHost ? '' : 'Only the host can start; ready up and the game auto-starts';
 }
 
 q('#rs-ready').addEventListener('click', function () {

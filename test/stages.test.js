@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageFor, validateAllStages, isBossStage, STAGE_NAMES } from '../shared/stages.js';
+import { stageFor, validateAllStages, isBossStage, stageName, STAGE_NAMES } from '../shared/stages.js';
 import { STAGE_COUNT } from '../shared/constants.js';
 
 test('all 32 stages validate cleanly (boss every 4th, mid-boss otherwise, sorted waves)', () => {
@@ -37,6 +37,15 @@ test('stages 28..1 are playable via the deterministic generator and reproducible
   }
 });
 
-test('every stage number has a flavour name', () => {
-  for (let n = 1; n <= STAGE_COUNT; n++) assert.ok(STAGE_NAMES[n] || true); // generated names fall back gracefully
+test('every stage number has a flavour name and unknown stages fall back to a sector name', () => {
+  for (let n = 1; n <= STAGE_COUNT; n++) {
+    assert.equal(typeof STAGE_NAMES[n], 'string', `stage ${n} should have an authored name`);
+    assert.ok(STAGE_NAMES[n].length > 0, `stage ${n} name should not be empty`);
+    assert.equal(stageFor(n).name, stageName(n));
+  }
+  assert.equal(stageName(99), 'Sector 99');
+});
+
+test('the final stage is a pure victory run with no mid-boss', () => {
+  assert.equal(stageFor(1).waves.filter((w) => w.spawn === 'midboss').length, 0);
 });

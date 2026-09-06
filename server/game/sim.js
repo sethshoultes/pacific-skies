@@ -353,7 +353,11 @@ export class Sim {
   _killEnemy(e, ownerPid) {
     e.dead = true;
     const owner = this.players.get(ownerPid);
-    let score = e.type === 'boss' ? SCORE.boss : e.type === 'midboss' ? SCORE.midboss : e.type === 'medium' ? SCORE.medium : SCORE.small;
+    let score = e.type === 'boss' ? SCORE.boss
+      : e.type === 'midboss' ? SCORE.midboss
+      : e.type === 'medium' ? SCORE.medium
+      : e.isRed ? SCORE.redFormation
+      : SCORE.small;
     if (owner) this._awardScore(owner, score);
     if (owner) owner.kills++;
     this.onEvent({ t: 'kill', enemy: e.kind, pid: ownerPid });

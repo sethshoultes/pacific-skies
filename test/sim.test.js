@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Sim } from '../server/game/sim.js';
-import { WORLD_W, WORLD_H, LOOP_MS, DT, START_LOOPS, RESPAWN_LOOPS } from '../shared/constants.js';
+import { WORLD_W, WORLD_H, LOOP_MS, DT, START_LOOPS, RESPAWN_LOOPS, SCORE } from '../shared/constants.js';
 
 function stepN(sim, n) { for (let i = 0; i < n; i++) sim.step(); }
 
@@ -131,6 +131,8 @@ test('red formation drops a POW only when all 5 members are destroyed', () => {
   // kill the last one -- POW drops
   sim._killEnemy(sim.enemies[0], 'p1');
   assert.equal(sim.powItems.length, 1);
+  // red-formation planes score their own (higher) value, not the plain small-fighter value
+  assert.equal(sim.players.get('p1').score, 5 * SCORE.redFormation);
 });
 
 test('boss has multiple hit points and requires several hits', () => {

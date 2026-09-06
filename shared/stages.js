@@ -112,7 +112,9 @@ export function generateStage(n) {
   const pool = ['straight', 'sine', 'v-sweep', 'red-formation', 'medium'];
   const budget = boss ? seconds - 12 : (n === 1 ? seconds - 6 : seconds - 8);
   let placedRed = false;
-  let placedMid = boss; // non-boss stages get exactly one mid-boss (placedMid starts false); boss stages get the real boss instead, so start "already placed"
+  // Non-boss stages get exactly one mid-boss (placedMid starts false). Boss stages get the real
+  // boss instead, and the final stage 1 is a pure victory run, so both start "already placed".
+  let placedMid = boss || n === 1;
   while (t < budget) {
     let type = pool[Math.floor(rng() * pool.length)];
     if (type === 'red-formation' && placedRed && rng() < 0.6) type = 'straight';
@@ -148,6 +150,7 @@ export function validateStage(stage) {
   }
   if (isBossStage(n) && bossCount !== 1) problems.push(`stage ${n}: expected exactly one boss, got ${bossCount}`);
   if (!isBossStage(n) && n !== 1 && midBossCount !== 1) problems.push(`stage ${n}: expected exactly one mid-boss, got ${midBossCount}`);
+  if (n === 1 && midBossCount !== 0) problems.push(`stage ${n}: the final stage is a pure victory run, expected no mid-boss, got ${midBossCount}`);
   if (stage.waves.length === 0) problems.push(`stage ${n}: no waves`);
   return problems;
 }

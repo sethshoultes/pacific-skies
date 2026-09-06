@@ -222,8 +222,8 @@ wss.on('connection', (ws, req) => {
         case 'start':
           if (room) {
             const uid = room.clients.get(pid)?.user?.id || null;
-            room.start(pid);
-            telemetry.recordEvent({ kind: 'start', userId: uid, ip, data: { roomId: room.id } });
+            const started = room.start(pid);
+            if (started) telemetry.recordEvent({ kind: 'start', userId: uid, ip, data: { roomId: room.id } });
           }
           break;
         case 'kick': if (room) room.kick(pid, msg.pid); break;

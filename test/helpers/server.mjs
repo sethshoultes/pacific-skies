@@ -73,7 +73,7 @@ export async function waitExit(child, exited, timeoutMs = 10_000) {
  *
  * @param {object} [opts]
  * @param {Record<string,string>} [opts.env] extra environment variables merged over process.env
- *   (e.g. `{ GAUNTLET_DEBUG: '1' }`, `{ GAUNTLET_ADMINS: 'boss' }`).
+ *   (e.g. `{ SKIES_DEBUG: '1' }`, `{ SKIES_ADMINS: 'boss' }`).
  * @param {number} [opts.timeoutMs] readiness timeout in ms (default 20s).
  * @returns {Promise<{
  *   baseUrl: string, port: number, pid: number, dataDir: string,
@@ -81,7 +81,7 @@ export async function waitExit(child, exited, timeoutMs = 10_000) {
  * }>}
  */
 export async function startServer({ env = {}, timeoutMs = 20_000 } = {}) {
-  const dataDir = await mkdtemp(path.join(tmpdir(), 'gauntlet-test-'));
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'pacific-skies-test-'));
   const port = await findFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['--no-warnings=ExperimentalWarning', 'server/index.js'], {
