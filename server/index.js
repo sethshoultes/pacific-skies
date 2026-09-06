@@ -69,7 +69,9 @@ function serveStatic(req, res, urlPath) {
   if (rel === '/') rel = '/index.html';
   const isShared = rel.startsWith('/shared/');
   const base = isShared ? path.join(ROOT, 'shared') : path.join(ROOT, 'client');
-  const subPath = isShared ? rel.slice('/shared'.length) : rel;
+  // Strip the leading slash so the join is unambiguously relative to `base` (path.join would keep
+  // base either way, but this makes the containment check below obvious to readers).
+  const subPath = (isShared ? rel.slice('/shared'.length) : rel).replace(/^\/+/, '');
   const file = path.normalize(path.join(base, subPath));
   const relToBase = path.relative(base, file);
   if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) { res.writeHead(403); return res.end(); }
