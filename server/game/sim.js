@@ -166,7 +166,7 @@ export class Sim {
     switch (w.spawn) {
       case 'straight':
         for (let i = 0; i < w.count; i++) {
-          this.enemies.push(this._mkSmall('straight', baseX + (i - w.count / 2) * 24, -20 - i * 30, { vx: 0, vy: 55 * diff.speedMul }));
+          this.enemies.push(this._mkSmall('straight', baseX + (i - (w.count - 1) / 2) * 24, -20 - i * 30, { vx: 0, vy: 55 * diff.speedMul }));
         }
         break;
       case 'sine':
@@ -184,20 +184,18 @@ export class Sim {
       }
       case 'red-formation': {
         const groupId = ++this.redGroupSeq;
-        const members = [];
         for (let i = 0; i < w.count; i++) {
           const e = this._mkSmall('red-formation', baseX + (i - (w.count - 1) / 2) * 26, -20 - i * 10, {
             vy: 45 * diff.speedMul, groupId, loopT: i * 0.3, baseX: baseX + (i - (w.count - 1) / 2) * 26, baseY: 90,
           });
           e.isRed = true;
-          members.push(e.id);
           this.enemies.push(e);
         }
         break;
       }
       case 'medium':
         for (let i = 0; i < w.count; i++) {
-          this.enemies.push(this._mkMedium(baseX + (i - w.count / 2) * 40, -30 - i * 40, diff));
+          this.enemies.push(this._mkMedium(baseX + (i - (w.count - 1) / 2) * 40, -30 - i * 40, diff));
         }
         break;
       case 'midboss':

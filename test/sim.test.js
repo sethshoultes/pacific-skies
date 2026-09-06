@@ -176,6 +176,25 @@ test('POW cycle: side, fourway, bomb, loop, bonus, life in order', () => {
   sim._applyPow(p, 'loop'); assert.equal(p.loops, loopsBefore + 1);
 });
 
+test('straight and medium waves are centered on baseX regardless of count (even or odd)', () => {
+  for (const count of [4, 5]) {
+    const sim = new Sim({ seed: `center-${count}` });
+    sim._spawnWave({ at: 0, spawn: 'straight', count, x: 0.5 });
+    const xs = sim.enemies.map((e) => e.x);
+    const baseX = 0.5 * WORLD_W;
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    assert.ok(Math.abs(mean - baseX) < 1e-6, `straight count=${count}: expected mean ${baseX}, got ${mean}`);
+  }
+  for (const count of [4, 5]) {
+    const sim = new Sim({ seed: `center-med-${count}` });
+    sim._spawnWave({ at: 0, spawn: 'medium', count, x: 0.5 });
+    const xs = sim.enemies.map((e) => e.x);
+    const baseX = 0.5 * WORLD_W;
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    assert.ok(Math.abs(mean - baseX) < 1e-6, `medium count=${count}: expected mean ${baseX}, got ${mean}`);
+  }
+});
+
 test('red formation drops a POW only when all 5 members are destroyed', () => {
   const sim = new Sim({ seed: 't9' });
   sim.addPlayer('p1');

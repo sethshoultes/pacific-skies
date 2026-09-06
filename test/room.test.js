@@ -108,3 +108,27 @@ test('slot assignment does not collide when the original slot-1 player leaves an
     'must not collide with the still-present slot-2 player',
   );
 });
+
+test('a client-supplied guestId is capped and sanitized', () => {
+  const room = new Room({ id: 'r8', name: 'GuestId', seed: 's' });
+  const evil = fakeClient();
+  const huge = 'a'.repeat(500) + '<script>';
+  const r1 = room.join(evil.ws, { pid: 'evil', user: null, name: 'x', guestId: huge });
+  assert.ok(r1.guestId.length <= 64, 'guestId must be capped in length');
+  assert.doesNotMatch(r1.guestId, /[^A-Za-z0-9_-]/, 'guestId must only contain safe characters');
+});
+
+test('a non-string guestId is not trusted as-is', () => {
+  const room = new Room({ id: 'r9', name: 'GuestId2', seed: 's' });
+  const weird = fakeClient();
+  const r = room.join(weird.ws, { pid: 'weird', user: null, name: 'x', guestId: { toString: () => 'nope' } });
+  assert.notEqual(r.guestId, undefined);
+  assert.doesNotMatch(String(r.guestId), /[^A-Za-z0-9_-]/, 'a non-string guestId must not be trusted as-is');
+});
+
+test('guestId is ignored entirely for a logged-in user', () => {
+  const room = new Room({ id: 'r10', name: 'GuestId3', seed: 's' });
+  const loggedIn = fakeClient();
+  const r = room.join(loggedIn.ws, { pid: 'acct', user: { id: 1, username: 'ace' }, name: 'ace', guestId: 'sneaky-override' });
+  assert.equal(r.guestId, null, 'guestId must be ignored entirely for a logged-in user');
+});

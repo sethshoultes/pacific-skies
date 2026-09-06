@@ -53,7 +53,11 @@ export class Room {
     // fires later and evicts the player who just came back (see `disconnect`/`leave`).
     const existing = this.clients.get(pid);
     if (existing && existing.awayTimer) clearTimeout(existing.awayTimer);
-    const finalGuestId = guestId || (user ? null : crypto.randomBytes(4).toString('hex'));
+    // guestId is client-controlled (the WS join message), so it must never be stored as-is: cap
+    // its length and charset, and ignore it entirely for a logged-in user -- a guest identifier
+    // has no business overriding/coexisting with a real account.
+    const suppliedGuestId = !user && typeof guestId === 'string' ? guestId.slice(0, 64).replace(/[^A-Za-z0-9_-]/g, '') : '';
+    const finalGuestId = suppliedGuestId || (user ? null : crypto.randomBytes(4).toString('hex'));
     // resumeToken is a private secret handed only to this client, distinct from `pid` -- pid is
     // broadcast to every player in the room via game snapshots, so it must never itself be usable
     // to resume another player's slot.
