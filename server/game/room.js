@@ -10,11 +10,15 @@ const COUNTDOWN_SECONDS = 5;   // auto-start countdown once everyone readies up
 const CHAT_MAX = 200;
 
 export class Room {
-  constructor({ id, name, seed, isPublic = true, onEmpty }) {
+  constructor({ id, name, seed, isPublic = true, onEmpty, onStart }) {
     this.id = id;
     this.name = name;
     this.isPublic = isPublic;
     this.onEmpty = onEmpty || (() => {});
+    // Fired exactly once, right as the game actually transitions to 'playing' -- whether from an
+    // explicit start (WS 'start' message) or the ready-countdown auto-start (_maybeAutoStart) --
+    // so callers (telemetry) see every game start, not just the explicit ones.
+    this.onStart = onStart || (() => {});
     this.state = 'lobby'; // 'lobby' | 'playing' | 'over'
     this.clients = new Map(); // pid -> { ws, user, name, ready, away, guestId }
     this.sim = new Sim({ seed, onEvent: (ev) => this._onSimEvent(ev) });
@@ -148,6 +152,7 @@ export class Room {
     this.startedAt = Date.now();
     this.broadcast({ t: 'start', room: this.info() });
     this.tickTimer = setInterval(() => this._tick(), 1000 / TICK_RATE);
+    this.onStart(hostPid);
     return true;
   }
 

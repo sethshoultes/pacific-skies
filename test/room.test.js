@@ -151,3 +151,27 @@ test('guestId is ignored entirely for a logged-in user', () => {
   const r = room.join(loggedIn.ws, { pid: 'acct', user: { id: 1, username: 'ace' }, name: 'ace', guestId: 'sneaky-override' });
   assert.equal(r.guestId, null, 'guestId must be ignored entirely for a logged-in user');
 });
+
+test('onStart fires for an explicit host start', () => {
+  let fired = 0;
+  const room = new Room({ id: 'r11', name: 'OnStartExplicit', seed: 's', onStart: () => { fired++; } });
+  const host = fakeClient();
+  room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
+  assert.equal(room.start('host'), true);
+  assert.equal(fired, 1);
+  clearInterval(room.tickTimer);
+});
+
+test('onStart also fires for the ready-countdown auto-start, not just an explicit start message', (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let fired = 0;
+  const room = new Room({ id: 'r12', name: 'OnStartAuto', seed: 's', onStart: () => { fired++; } });
+  const host = fakeClient();
+  room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
+  room.setReady('host', true); // solo player ready -> countdown starts
+  assert.equal(fired, 0, 'must not fire before the countdown elapses');
+  t.mock.timers.tick(5000); // COUNTDOWN_SECONDS
+  assert.equal(fired, 1, 'must fire once the auto-start countdown elapses');
+  assert.equal(room.state, 'playing');
+  clearInterval(room.tickTimer);
+});

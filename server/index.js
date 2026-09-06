@@ -22,7 +22,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '..');
 const PORT = Number(process.env.PORT || 3001);
 const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-const lobby = new Lobby();
+const lobby = new Lobby({
+  onRoomStart: (room, hostPid) => {
+    const uid = room.clients.get(hostPid)?.user?.id || null;
+    telemetry.recordEvent({ kind: 'start', userId: uid, data: { roomId: room.id } });
+  },
+});
 admin.init(lobby);
 telemetry.startRetentionJob(90);
 
@@ -228,10 +233,11 @@ wss.on('connection', (ws, req) => {
         }
         case 'ready': if (room) room.setReady(pid, !!msg.ready); break;
         case 'start':
-          if (room) {
-            const uid = room.clients.get(pid)?.user?.id || null;
-            if (room.start(pid)) telemetry.recordEvent({ kind: 'start', userId: uid, ip, data: { roomId: room.id } });
-          }
+          // Telemetry for the 'start' kind is recorded centrally via Lobby's onRoomStart hook
+          // (see server/index.js's `new Lobby(...)` above), which fires for every game start --
+          // both this explicit path and the ready-countdown auto-start (Room._maybeAutoStart) --
+          // so it isn't duplicated here.
+          if (room) room.start(pid);
           break;
         case 'kick': if (room) room.kick(pid, msg.pid); break;
         case 'leave':
