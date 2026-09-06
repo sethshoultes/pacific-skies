@@ -31,6 +31,10 @@ canvas { display: block; image-rendering: pixelated; background: #0e2a52; max-wi
 #game { position: relative; }
 #view { max-height: calc(100dvh - 150px); width: auto; margin: 0 auto; }
 #touch-controls { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; display: flex; justify-content: space-between; align-items: flex-end; padding: 14px; pointer-events: none; user-select: none; -webkit-user-select: none; }
+/* The element starts `hidden` in HTML until game.js enables it for a touch device; the plain
+   `display: flex` above has higher specificity than the UA [hidden]{display:none} rule, so it
+   would otherwise render (e.g. briefly on desktop) before JS gets a chance to remove `hidden`. */
+#touch-controls[hidden] { display: none; }
 #touch-controls > * { pointer-events: auto; touch-action: none; }
 .tc-stick { position: relative; width: clamp(88px, 32vmin, 128px); height: clamp(88px, 32vmin, 128px); border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); background: rgba(6,9,15,0.35); }
 .tc-knob { position: absolute; left: 50%; top: 50%; width: 40%; height: 40%; transform-origin: center; translate: -50% -50%; border-radius: 50%; background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.8); transition: transform 40ms linear; }
