@@ -406,11 +406,14 @@ function currentInput() {
 
 let running = false;
 let inputTimer = null;
+let renderLoopStarted = false;
 function beginGameLoop() {
   running = true;
   if (inputTimer) clearInterval(inputTimer);
   inputTimer = setInterval(() => { if (running) send({ t: 'input', ...currentInput() }); }, 1000 / 30);
-  requestAnimationFrame(renderFrame);
+  // renderFrame re-schedules itself forever, so start the chain once; a continue (or any other
+  // re-entry) must only restart the input interval, or every call would add a concurrent render loop.
+  if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderFrame); }
 }
 function renderFrame(ts) {
   if (screens.game.classList.contains('on')) {
