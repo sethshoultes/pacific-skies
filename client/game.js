@@ -24,7 +24,8 @@ function attractFrame(ts) {
   const t = ts / 1000;
   attractScroll += 1.2;
   actx.save();
-  actx.scale(attractCanvas.width / 384, attractCanvas.height / 576 * (576 / 360));
+  // Scale world space (WORLD_W x WORLD_H = 384x576) down to the attract canvas's own pixel size.
+  actx.scale(attractCanvas.width / 384, attractCanvas.height / 576);
   drawBackground(actx, attractOcean, attractScroll, t);
   const demoPlayer = { pid: 'demo', x: 192 + Math.sin(t * 0.7) * 90, y: 260 + Math.sin(t * 1.3) * 40, alive: true, side: false, invuln: false, looping: Math.floor(t) % 6 === 0 };
   const enemies = [];
