@@ -53,6 +53,8 @@ export class Room {
     const finalGuestId = guestId || (user ? null : crypto.randomBytes(4).toString('hex'));
     this.clients.set(pid, { ws, user, name, ready: false, away: false, awayTimer: null, guestId: finalGuestId });
     if (!this.sim.players.has(pid)) this.sim.addPlayer(pid, { slot: this.clients.size });
+    // The stats/achievements hooks key off the sim player's account; guests stay null.
+    this.sim.players.get(pid).user = user || null;
     this.sendTo(pid, { t: 'joined', room: this.info(), pid, you: { name } });
     this.broadcast({ t: 'roster', room: this.info() });
     return { pid, guestId: finalGuestId };

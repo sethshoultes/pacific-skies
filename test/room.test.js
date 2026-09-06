@@ -42,3 +42,13 @@ test('nobody new can join once the game is playing, but an existing player may r
   assert.doesNotThrow(() => room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null }));
   clearInterval(room.tickTimer);
 });
+
+test('joining attaches the account to the sim player so stats hooks can record for logged-in users', () => {
+  const room = new Room({ id: 'r4', name: 'Stats', seed: 's' });
+  const c = fakeClient();
+  room.join(c.ws, { pid: 'u1', user: { id: 42, username: 'ace' }, name: 'ace', guestId: null });
+  assert.equal(room.sim.players.get('u1').user?.id, 42);
+  const g = fakeClient();
+  room.join(g.ws, { pid: 'g1', user: null, name: 'guest', guestId: null });
+  assert.equal(room.sim.players.get('g1').user, null);
+});

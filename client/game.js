@@ -141,6 +141,7 @@ function showTally(ev) {
 
 function onGameOver(msg) {
   running = false;
+  if (inputTimer) { clearInterval(inputTimer); inputTimer = null; } // nothing to send once the run is over
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   const title = msg.reason === 'victory' ? 'VICTORY — TOKYO SECURED' : 'GAME OVER';
