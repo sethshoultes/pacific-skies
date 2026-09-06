@@ -179,3 +179,19 @@ test('co-op keeps scores and lives separate per player', () => {
   assert.equal(p2.lives, 2);
   assert.equal(p1.lives, 3);
 });
+
+test('red-formation kills award the red-formation score, not the small-plane score', async () => {
+  const { SCORE } = await import('../shared/constants.js');
+  const sim = new Sim({ seed: 't-red' });
+  sim.addPlayer('p1');
+  const p = sim.players.get('p1');
+  const mk = (isRed) => ({ type: 'small', isRed, x: 100, y: 100, hp: 1, dead: false });
+  const before = p.score;
+  const red = mk(true); sim.enemies.push(red); sim._killEnemy(red, 'p1');
+  const gainedRed = p.score - before;
+  const plain = mk(false); sim.enemies.push(plain); sim._killEnemy(plain, 'p1');
+  const gainedSmall = p.score - before - gainedRed;
+  assert.equal(gainedRed, SCORE.redFormation);
+  assert.equal(gainedSmall, SCORE.small);
+  assert.notEqual(SCORE.redFormation, SCORE.small);
+});

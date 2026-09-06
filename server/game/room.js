@@ -111,18 +111,22 @@ export class Room {
     }
   }
 
+  /** Start the game. Only the host may start a co-op room directly (a solo player is always the
+   *  host); anyone else gets an error. Returns true only when the game actually started. */
   start(pid) {
     const hostPid = [...this.clients.keys()][0];
     if (pid && pid !== hostPid && this.clients.size > 1) {
-      // Non-host may only trigger start indirectly via ready-up/auto-start, not directly, unless
-      // they're playing solo.
+      const c = this.clients.get(pid);
+      if (c) this.send(c, { t: 'error', error: 'Only the host can start the game' });
+      return false;
     }
-    if (this.state !== 'lobby') return;
+    if (this.state !== 'lobby') return false;
     if (this.countdown) { clearInterval(this.countdown); this.countdown = null; }
     this.state = 'playing';
     this.startedAt = Date.now();
     this.broadcast({ t: 'start', room: this.info() });
     this.tickTimer = setInterval(() => this._tick(), 1000 / TICK_RATE);
+    return true;
   }
 
   handleInput(pid, msg) { this.sim.setInput(pid, msg); }

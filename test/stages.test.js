@@ -38,5 +38,16 @@ test('stages 28..1 are playable via the deterministic generator and reproducible
 });
 
 test('every stage number has a flavour name', () => {
-  for (let n = 1; n <= STAGE_COUNT; n++) assert.ok(STAGE_NAMES[n] || true); // generated names fall back gracefully
+  for (let n = 1; n <= STAGE_COUNT; n++) assert.ok(typeof STAGE_NAMES[n] === 'string' && STAGE_NAMES[n].length > 0, `stage ${n} needs a name`);
+});
+
+test('stage 1 has no mid-boss so the finale is a pure victory run, and still validates', () => {
+  const s1 = stageFor(1);
+  assert.equal(s1.waves.filter((w) => w.spawn === 'midboss').length, 0);
+  assert.equal(s1.waves.filter((w) => w.spawn === 'boss').length, 0);
+});
+
+test('stageName falls back to a generated sector name for unknown stages', async () => {
+  const { stageName } = await import('../shared/stages.js');
+  assert.match(stageName(999), /Sector 999/);
 });

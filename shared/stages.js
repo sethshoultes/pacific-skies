@@ -112,7 +112,9 @@ export function generateStage(n) {
   const pool = ['straight', 'sine', 'v-sweep', 'red-formation', 'medium'];
   const budget = boss ? seconds - 12 : (n === 1 ? seconds - 6 : seconds - 8);
   let placedRed = false;
-  let placedMid = boss; // non-boss stages get exactly one mid-boss (placedMid starts false); boss stages get the real boss instead, so start "already placed"
+  // Non-boss stages get exactly one mid-boss; boss stages get the real boss instead, and stage 1
+  // is exempt so the finale can be a pure victory run (see validateStage).
+  let placedMid = boss || n === 1;
   while (t < budget) {
     let type = pool[Math.floor(rng() * pool.length)];
     if (type === 'red-formation' && placedRed && rng() < 0.6) type = 'straight';
