@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pacific Skies</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<nav class="top"></nav>
+<main>
+  <div id="stage">
+
+    <section id="title" class="screen on">
+      <h1>PACIFIC SKIES</h1>
+      <div class="sub">A tribute to the 1984 arcade vertical scroller genre</div>
+      <canvas id="attract" width="384" height="360"></canvas>
+      <div class="sub blink" id="coin-prompt">PRESS START — INSERT COIN</div>
+      <div class="row">
+        <label style="margin:0">Callsign</label>
+        <input id="gname" maxlength="12" placeholder="Guest" />
+      </div>
+      <div class="row">
+        <button class="primary" id="quick">Quick Play</button>
+        <button id="create">Create Room</button>
+        <button id="join-link">Join via link</button>
+      </div>
+      <div class="sub" id="hiscore"></div>
+    </section>
+
+    <section id="roomscreen" class="screen">
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <b id="rs-name">Room</b>
+          <span class="muted" id="rs-id"></span>
+        </div>
+        <p class="muted" style="font-size:12px">Invite link: <a id="rs-link" href="#"></a></p>
+        <div id="rs-roster"></div>
+        <div class="row" style="margin-top:12px;justify-content:space-between">
+          <button id="rs-ready">Ready</button>
+          <span id="rs-countdown" class="muted"></span>
+          <button class="primary" id="rs-start">Start</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="rs-chat" placeholder="Say something..." style="flex:1" />
+        </div>
+        <div id="rs-chatlog" class="muted" style="font-size:11px;max-height:80px;overflow:auto;margin-top:6px"></div>
+      </div>
+    </section>
+
+    <section id="game" class="screen">
+      <div id="hud">
+        <span>STAGE <b id="hud-stage">32</b> <span id="hud-stagename" class="muted"></span></span>
+        <span class="lives">LIVES <b id="hud-lives">3</b></span>
+        <span class="loops">LOOPS <b id="hud-loops">3</b></span>
+        <span class="score">SCORE <b id="hud-score">0</b></span>
+      </div>
+      <canvas id="view" width="384" height="576"></canvas>
+    </section>
+
+  </div>
+</main>
+<script type="module" src="/game.js"></script>
+</body>
+</html>

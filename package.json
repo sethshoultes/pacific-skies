@@ -1,0 +1,22 @@
+{
+  "name": "pacific-skies",
+  "version": "0.1.0",
+  "description": "A tribute to the 1984 arcade vertical scroller genre (inspired by Capcom's 1942): fly the P-38-style \"Super Ace\" through 32 stages of the Pacific theatre, with loop-the-loop dodges, POW power-ups, formation waves, and online 2-player co-op.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning server/index.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch server/index.js",
+    "test": "node --no-warnings=ExperimentalWarning --test \"test/**/*.test.js\"",
+    "smoke": "node test/smoke.mjs",
+    "e2e": "node test/e2e.mjs"
+  },
+  "engines": { "node": ">=22.5" },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  },
+  "license": "MIT"
+}
