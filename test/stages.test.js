@@ -63,3 +63,12 @@ test('stageName falls back to a generated sector name for unknown stages', async
   const { stageName } = await import('../shared/stages.js');
   assert.match(stageName(999), /Sector 999/);
 });
+
+test('generated waves never have x === 1, which would place baseX at exactly WORLD_W (off-screen)', () => {
+  for (let n = 1; n <= 28; n++) {
+    const stage = stageFor(n);
+    for (const w of stage.waves) {
+      if (typeof w.x === 'number') assert.ok(w.x < 1, `stage ${n}: wave x=${w.x} must be < 1`);
+    }
+  }
+});

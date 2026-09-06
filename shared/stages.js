@@ -120,7 +120,9 @@ export function generateStage(n) {
     if (type === 'red-formation' && placedRed && rng() < 0.6) type = 'straight';
     if (type === 'red-formation') placedRed = true;
     const count = 3 + Math.min(5, Math.floor(depth / 4)) + Math.floor(rng() * 2);
-    waves.push({ at: t, spawn: type, count, x: Math.round(rng() * 100) / 100, params: type === 'v-sweep' ? { dir: rng() < 0.5 ? 1 : -1 } : undefined });
+    // Math.floor (not round) so this can never produce x === 1, which would put baseX at exactly
+    // WORLD_W and push the whole formation off-screen.
+    waves.push({ at: t, spawn: type, count, x: Math.floor(rng() * 100) / 100, params: type === 'v-sweep' ? { dir: rng() < 0.5 ? 1 : -1 } : undefined });
     t += 5 + Math.floor(rng() * 4);
     if (!placedMid && t > budget * 0.45) {
       waves.push({ at: t, spawn: 'midboss', count: 1, x: 0.5 });

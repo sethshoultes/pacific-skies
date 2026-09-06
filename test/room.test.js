@@ -4,7 +4,9 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-process.env.DATA_DIR = process.env.DATA_DIR || mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
+// Always a fresh temp dir -- falling back to an existing DATA_DIR could share a SQLite DB with
+// another test file's run and make assertions order-dependent/flaky.
+process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
 const { Room } = await import('../server/game/room.js');
 
 function fakeClient() {

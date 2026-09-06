@@ -4,7 +4,9 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-process.env.DATA_DIR = process.env.DATA_DIR || mkdtempSync(path.join(tmpdir(), 'skies-telemetry-test-'));
+// Always a fresh temp dir -- falling back to an existing DATA_DIR could share a SQLite DB with
+// another test file's run and make assertions order-dependent/flaky.
+process.env.DATA_DIR = mkdtempSync(path.join(tmpdir(), 'skies-telemetry-test-'));
 const telemetry = await import('../server/telemetry.js');
 const { db } = await import('../server/db.js');
 
