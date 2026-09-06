@@ -336,3 +336,15 @@ test('continueRun gives players who are out of lives a fresh set, resets their s
   assert.deepEqual(events.map((e) => e.t), ['continue']);
   assert.deepEqual(sim.continueRun(), [], 'nothing to continue when nobody is out');
 });
+
+test('snapshot bullets carry ids so the client can interpolate them between ticks', () => {
+  const sim = new Sim({ seed: 'ids' });
+  const p = sim.addPlayer('p1');
+  p.input.fire = true; sim.step();
+  sim._spawnWave({ at: 0, spawn: 'medium', count: 1, x: 0.5 });
+  sim.enemies[0].y = 100; sim.enemies[0].fireCooldown = 0; sim.step();
+  const s = sim.snapshot();
+  assert.ok(s.bullets.length > 0 && s.bullets.every((b) => Number.isInteger(b.id)));
+  assert.ok(s.enemyBullets.length > 0 && s.enemyBullets.every((b) => Number.isInteger(b.id)));
+  assert.ok(s.enemies.every((e) => typeof e.kind === 'string'), 'kind is exposed so red formations can be drawn red');
+});

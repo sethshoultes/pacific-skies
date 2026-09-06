@@ -60,6 +60,11 @@ main { padding: 12px; }
 
 .overlay { position: absolute; inset: 0; background: rgba(3,6,12,0.88); color: var(--fg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px; }
 .overlay h2 { color: var(--accent); margin: 0; letter-spacing: 0.08em; }
+.banner { position: absolute; left: 0; right: 0; top: 34%; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; animation: banner 2.6s ease-out forwards; text-shadow: 0 2px 0 #000, 0 0 12px rgba(0,0,0,0.8); }
+.banner .bt { font-size: 28px; font-weight: bold; letter-spacing: 0.18em; color: var(--accent); }
+.banner .bs { font-size: 13px; letter-spacing: 0.12em; color: var(--fg); text-transform: uppercase; }
+.banner.warn .bt { color: var(--red); animation: blink 0.5s steps(1) infinite; }
+@keyframes banner { 0% { opacity: 0; transform: translateY(12px); } 10% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
 .overlay .continue { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 6px 0; color: var(--accent); letter-spacing: 0.08em; }
 .overlay table { font-size: 12px; border-collapse: collapse; }
 .overlay td, .overlay th { padding: 2px 8px; text-align: right; }

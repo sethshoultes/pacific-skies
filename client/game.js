@@ -109,6 +109,7 @@ function handleMessage(msg) {
       break;
     case 'start':
       roomState = msg.room; show('game'); attractRunning = false; beginGameLoop();
+      banner(`STAGE ${latestSnap?.stageNumber ?? 32}`, latestSnap?.stageName || 'Midway');
       break;
     case 'chat': {
       const log = q('#rs-chatlog');
@@ -116,7 +117,7 @@ function handleMessage(msg) {
       log.appendChild(line); log.scrollTop = log.scrollHeight;
       break;
     }
-    case 'snap': latestSnap = msg.s; onSnap(msg.s); break;
+    case 'snap': pushSnap(msg.s); onSnap(msg.s); break;
     case 'event': onEvent(msg.event); break;
     case 'achievement': toast('Achievement unlocked', msg.achievement.name, 'ach'); sfx('1up'); break;
     case 'gameover': onGameOver(msg); break;
@@ -130,6 +131,55 @@ function handleMessage(msg) {
 let ocean = createOcean(3);
 let scrollY = 0;
 let explosions = [];
+
+// ---- snapshot interpolation: the server ticks at 30Hz but the screen refreshes at 60+, so we
+// render one tick behind, blending the previous snapshot toward the latest by the time elapsed
+// since it arrived. Entities are matched by id (enemies, bullets) or pid (players); anything only
+// present in the latest snapshot is drawn where it is.
+let snapPrev = null, snapLast = null, tPrev = 0, tLast = 0;
+const prevX = new Map(); // pid -> x from the previous snapshot, for banking
+function pushSnap(s) {
+  snapPrev = snapLast; tPrev = tLast; snapLast = s; tLast = performance.now(); latestSnap = s;
+}
+function lerpList(prev, last, key, a) {
+  if (!prev) return last;
+  const byId = new Map(prev.map((e) => [e[key], e]));
+  return last.map((e) => {
+    const o = byId.get(e[key]);
+    return o ? { ...e, x: o.x + (e.x - o.x) * a, y: o.y + (e.y - o.y) * a } : e;
+  });
+}
+function interpolatedSnap() {
+  if (!snapLast) return null;
+  const span = Math.max(1, tLast - tPrev);
+  const a = snapPrev ? Math.min(1, Math.max(0, (performance.now() - tLast) / span)) : 1;
+  const players = lerpList(snapPrev?.players, snapLast.players, 'pid', a).map((p) => {
+    const px = prevX.get(p.pid);
+    const dx = px == null ? 0 : p.x - px;
+    return { ...p, bank: dx > 0.3 ? 1 : dx < -0.3 ? -1 : 0 };
+  });
+  for (const p of players) prevX.set(p.pid, p.x);
+  return {
+    ...snapLast,
+    players,
+    enemies: lerpList(snapPrev?.enemies, snapLast.enemies, 'id', a),
+    bullets: lerpList(snapPrev?.bullets, snapLast.bullets, 'id', a),
+    enemyBullets: lerpList(snapPrev?.enemyBullets, snapLast.enemyBullets, 'id', a),
+  };
+}
+
+// ---- in-game banners (stage intro, boss warning) ----
+let bannerTimer = null;
+function banner(title, sub = '', kind = '') {
+  q('#game .banner')?.remove();
+  const el = document.createElement('div');
+  el.className = 'banner ' + kind;
+  el.innerHTML = `<div class="bt"></div><div class="bs"></div>`;
+  el.querySelector('.bt').textContent = title; el.querySelector('.bs').textContent = sub;
+  q('#game').appendChild(el);
+  if (bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => el.remove(), 2600);
+}
 let prevEnemies = new Map(); // id -> {x, y, type}
 let prevAlive = new Map();   // pid -> {x, y}
 const onScreen = (x, y) => x > 0 && x < WORLD_W && y > 0 && y < WORLD_H;
@@ -170,7 +220,9 @@ function onEvent(ev) {
     case 'hit': sfx('hit'); break;
     case 'kill': sfx('kill'); break;
     case 'boss-down': case 'midboss-down': sfx('explosion'); break;
-    case 'boss-appear': case 'midboss-appear': sfx('boss-alarm'); break;
+    case 'boss-appear': sfx('boss-alarm'); banner('WARNING', 'Boss bomber inbound', 'warn'); break;
+    case 'midboss-appear': sfx('boss-alarm'); banner('WARNING', 'Heavy bomber inbound', 'warn'); break;
+    case 'stage-start': banner(`STAGE ${ev.stage}`, ev.name || ''); break;
     case 'loop': sfx('loop'); break;
     case 'pow': sfx('pow'); break;
     case 'bomb': sfx('bomb'); break;
@@ -364,7 +416,8 @@ function renderFrame(ts) {
   if (screens.game.classList.contains('on')) {
     scrollY += 2;
     drawBackground(ctx, ocean, scrollY, ts / 1000);
-    if (latestSnap) drawEntities(ctx, latestSnap);
+    const snap = interpolatedSnap();
+    if (snap) drawEntities(ctx, snap);
     if (explosions.length) explosions = drawExplosions(ctx, explosions, performance.now());
   }
   requestAnimationFrame(renderFrame);

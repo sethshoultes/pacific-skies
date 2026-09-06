@@ -122,6 +122,9 @@ export function playerPalette() {
 export function enemySmallPalette() {
   return { h: PALETTE.tanA, d: PALETTE.tanB, c: PALETTE.canopy, R: PALETTE.redA };
 }
+export function redFormationPalette() {
+  return { h: PALETTE.redA, d: PALETTE.redB, c: PALETTE.canopy, R: PALETTE.tanA };
+}
 export function enemyMediumPalette() {
   return { B: PALETTE.bomberA, b: PALETTE.bomberB, c: PALETTE.canopy };
 }

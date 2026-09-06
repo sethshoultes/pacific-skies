@@ -529,8 +529,9 @@ export class Sim {
         pid: p.pid, x: p.x, y: p.y, alive: p.alive, lives: p.lives, score: p.score, loops: p.loops,
         looping: p.looping, invuln: this.time < p.invulnUntil, side: p.side, fourway: p.fourway, slot: p.slot,
       })),
-      bullets: this.bullets.map((b) => ({ x: b.x, y: b.y })),
-      enemyBullets: this.enemyBullets.map((b) => ({ x: b.x, y: b.y })),
+      // ids let the client match entities across consecutive snapshots and interpolate their motion
+      bullets: this.bullets.map((b) => ({ id: b.id, x: b.x, y: b.y })),
+      enemyBullets: this.enemyBullets.map((b) => ({ id: b.id, x: b.x, y: b.y })),
       enemies: this.enemies.map((e) => ({ id: e.id, kind: e.kind, type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp })),
       powItems: this.powItems.map((it) => ({ x: it.x, y: it.y, type: it.type })),
     };

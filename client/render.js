@@ -4,7 +4,7 @@
 import {
   drawPixels, patternSize, PLAYER_UP, ESCORT, ENEMY_SMALL, ENEMY_MEDIUM, BOSS, POW_ICON,
   playerPalette, enemySmallPalette, enemyMediumPalette, bossPalette, powPalette,
-  drawWaveTile, drawIslandTile, drawCarrierTile, drawCloud, PALETTE,
+  drawWaveTile, drawIslandTile, drawCarrierTile, drawCloud, PALETTE, redFormationPalette,
 } from './sprites.js';
 import { WORLD_W, WORLD_H } from '../shared/constants.js';
 
@@ -65,9 +65,10 @@ function drawEscort(ctx, x, y, scale = 1.6) {
   const size = patternSize(ESCORT, scale);
   drawPixels(ctx, ESCORT, playerPalette(), x - size.w / 2, y - size.h / 2, scale);
 }
-function drawEnemySmall(ctx, x, y, scale = 2) {
+function drawEnemySmall(ctx, x, y, scale = 2, red = false) {
   const size = patternSize(ENEMY_SMALL, scale);
-  drawPixels(ctx, ENEMY_SMALL, enemySmallPalette(), x - size.w / 2, y - size.h / 2, scale);
+  // The red formation must read as red at a glance -- clearing all five is what drops the POW.
+  drawPixels(ctx, ENEMY_SMALL, red ? redFormationPalette() : enemySmallPalette(), x - size.w / 2, y - size.h / 2, scale);
 }
 function drawEnemyMedium(ctx, x, y, scale = 2.1) {
   const size = patternSize(ENEMY_MEDIUM, scale);
@@ -90,7 +91,7 @@ export function drawEntities(ctx, snap, blinkPlayers = new Set()) {
     if (e.type === 'boss') { drawBoss(ctx, e.x, e.y, 2.4); drawHealthBar(ctx, e.x, e.y - 44, e.hp, e.maxHp, 60); }
     else if (e.type === 'midboss') { drawEnemyMedium(ctx, e.x, e.y, 2.8); drawHealthBar(ctx, e.x, e.y - 32, e.hp, e.maxHp, 40); }
     else if (e.type === 'medium') drawEnemyMedium(ctx, e.x, e.y);
-    else drawEnemySmall(ctx, e.x, e.y);
+    else drawEnemySmall(ctx, e.x, e.y, 2, e.kind === 'red-formation');
   }
   for (const p of snap.players || []) {
     if (!p.alive) continue;
@@ -98,6 +99,9 @@ export function drawEntities(ctx, snap, blinkPlayers = new Set()) {
     if (p.side) { drawEscort(ctx, p.x - 20, p.y + 6); drawEscort(ctx, p.x + 20, p.y + 6); }
     ctx.save();
     if (p.looping) ctx.globalAlpha = 0.55;
+    // Banking: squash the sprite toward the direction of travel (p.bank is -1/0/1, set by the
+    // client from the plane's horizontal motion) so sideways moves read as a roll.
+    if (p.bank) { ctx.translate(p.x, p.y); ctx.scale(0.72, 1); ctx.translate(-p.x, -p.y); }
     drawPlane(ctx, p.x, p.y);
     ctx.restore();
     if (p.invuln && !p.looping) {
