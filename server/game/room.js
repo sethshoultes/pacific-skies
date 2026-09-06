@@ -8,6 +8,7 @@ import * as stats from '../stats.js';
 const AWAY_GRACE_MS = 30000;   // how long a disconnected player's slot is held before a real leave
 const COUNTDOWN_SECONDS = 5;   // auto-start countdown once everyone readies up
 const CHAT_MAX = 200;
+const MAX_CONTINUES = 3;     // arcade-style credits per run
 
 export class Room {
   constructor({ id, name, seed, isPublic = true, onEmpty, onStart }) {
@@ -25,8 +26,12 @@ export class Room {
     this.countdown = null;
     this.tickTimer = null;
     this.startedAt = null;
+    this.reason = null;      // why the game ended once state === 'over': 'gameover' | 'victory'
+    this.continuesUsed = 0;
     this._telemetryHooked = false;
   }
+
+  get continuesLeft() { return Math.max(0, MAX_CONTINUES - this.continuesUsed); }
 
   get playerCount() { return this.clients.size; }
   get full() { return this.playerCount >= MAX_PLAYERS; }
@@ -35,7 +40,9 @@ export class Room {
     return {
       id: this.id, name: this.name, isPublic: this.isPublic, state: this.state,
       playerCount: this.playerCount, maxPlayers: MAX_PLAYERS,
-      players: [...this.clients.values()].map((c) => ({ name: c.name, ready: c.ready, away: c.away })),
+      // pid is already broadcast in every snapshot, so exposing it here leaks nothing new; `host`
+      // lets the client offer the Start button only to the one player the server will honour.
+      players: [...this.clients.entries()].map(([pid, c], i) => ({ pid, name: c.name, ready: c.ready, away: c.away, host: i === 0 })),
     };
   }
 
@@ -158,6 +165,23 @@ export class Room {
 
   handleInput(pid, msg) { this.sim.setInput(pid, msg); }
 
+  /** Arcade continue after a game over: any player in the room may insert a coin; everyone who is
+   *  out of lives comes back (see Sim.continueRun) and the tick loop resumes on the same stage.
+   *  Limited to MAX_CONTINUES per room. Returns true if the game actually resumed. */
+  continueGame(pid) {
+    if (this.state !== 'over' || this.reason !== 'gameover') return false;
+    if (!this.clients.has(pid)) return false;
+    if (this.continuesUsed >= MAX_CONTINUES) { this.sendTo(pid, { t: 'error', error: 'No continues left' }); return false; }
+    const pids = this.sim.continueRun();
+    if (!pids.length) return false;
+    this.continuesUsed++;
+    this.state = 'playing';
+    this.reason = null;
+    this.broadcast({ t: 'continued', room: this.info(), by: pid, continuesLeft: this.continuesLeft });
+    this.tickTimer = setInterval(() => this._tick(), 1000 / TICK_RATE);
+    return true;
+  }
+
   debugAction(action) {
     if (action === 'clear-stage') { this.sim._clearStage(); }
     if (action === 'win-game') { this.sim.stageNumber = 1; this.sim._clearStage(); }
@@ -199,6 +223,11 @@ export class Room {
         }
         break;
       }
+      case 'continue': {
+        const p = this.sim.players.get(ev.pid);
+        if (p?.user) this._announceAchievements(ev.pid, stats.bump(p.user.id, 'continues', 1));
+        break;
+      }
       case 'loop-dodge': {
         const p = this.sim.players.get(ev.pid);
         if (p?.user) this._announceAchievements(ev.pid, stats.bump(p.user.id, 'loop_dodges', 1));
@@ -231,15 +260,19 @@ export class Room {
   _endGame(reason) {
     if (this.state === 'over') return;
     this.state = 'over';
+    this.reason = reason;
     if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
     for (const p of this.sim.players.values()) {
       if (!p.user) continue;
+      // A credit that ended with nothing to show (e.g. a continue that died before scoring a single
+      // hit) would only clutter the leaderboard/recent-runs with zero rows.
+      if (p.score === 0 && p.kills === 0) continue;
       stats.recordRun(p.user.id, {
         score: p.score, stageReached: STAGE_COUNT - this.sim.stageNumber + (reason === 'victory' ? 1 : 0),
         kills: p.kills, seconds: Math.round(this.sim.time), mode: this.sim.players.size > 1 ? 'coop' : 'solo',
       });
     }
-    this.broadcast({ t: 'gameover', reason, snapshot: this.sim.snapshot() });
+    this.broadcast({ t: 'gameover', reason, snapshot: this.sim.snapshot(), continuesLeft: reason === 'gameover' ? this.continuesLeft : 0 });
   }
 
   disconnect(pid) {

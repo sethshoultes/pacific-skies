@@ -106,6 +106,36 @@ export function drawEntities(ctx, snap, blinkPlayers = new Set()) {
   }
 }
 
+/** Client-side explosion effects. Each entry is { x, y, size, t0 } (t0 in ms from performance.now());
+ *  an expanding flash ring plus pixel debris flung outward, all over about 450ms. Pure eye candy --
+ *  the authoritative sim doesn't know about them -- so they are derived by the client from entities
+ *  that vanished between two snapshots (see client/game.js). Returns the list minus finished ones. */
+export function drawExplosions(ctx, explosions, now) {
+  const DUR = 450;
+  const live = [];
+  for (const ex of explosions) {
+    const k = (now - ex.t0) / DUR;
+    if (k >= 1) continue;
+    live.push(ex);
+    const r = ex.size * (0.4 + k * 1.4);
+    ctx.save();
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = k < 0.35 ? '#ffffff' : PALETTE.flame;
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, r * 0.55, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = PALETTE.enemyShot; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2); ctx.stroke();
+    // debris: deterministic per explosion so it doesn't jitter frame to frame
+    ctx.fillStyle = k < 0.5 ? PALETTE.flame : PALETTE.hullDark;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + ex.x * 0.01;
+      const d = r * (1.1 + ((i * 7) % 3) * 0.25);
+      ctx.fillRect(Math.round(ex.x + Math.cos(a) * d) - 1, Math.round(ex.y + Math.sin(a) * d) - 1, 3, 3);
+    }
+    ctx.restore();
+  }
+  return live;
+}
+
 function drawHealthBar(ctx, x, y, hp, maxHp, w) {
   ctx.fillStyle = '#222'; ctx.fillRect(x - w / 2, y, w, 4);
   ctx.fillStyle = PALETTE.redA; ctx.fillRect(x - w / 2, y, w * Math.max(0, hp / maxHp), 4);

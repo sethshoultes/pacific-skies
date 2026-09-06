@@ -239,6 +239,7 @@ wss.on('connection', (ws, req) => {
           // so it isn't duplicated here.
           if (room) room.start(pid);
           break;
+        case 'continue': if (room) room.continueGame(pid); break;
         case 'kick': if (room) room.kick(pid, msg.pid); break;
         case 'leave':
           if (room) {

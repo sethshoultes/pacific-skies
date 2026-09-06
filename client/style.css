@@ -24,10 +24,13 @@ nav.top .who { font-size: 12px; color: var(--muted); }
 
 main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 16px; }
 
-#stage { position: relative; width: 384px; }
-canvas { display: block; image-rendering: pixelated; background: #0e2a52; }
+#stage { position: relative; width: 384px; max-width: 100%; }
+canvas { display: block; image-rendering: pixelated; background: #0e2a52; max-width: 100%; height: auto; touch-action: none; }
 
-.screen { display: none; width: 384px; }
+.screen { display: none; width: 384px; max-width: 100%; }
+.touch-hint { display: none; font-size: 11px; text-align: center; margin: 6px 0 0; }
+@media (pointer: coarse) { .touch-hint { display: block; } .controls-hint { display: none; } }
+main { padding: 12px; }
 .screen.on { display: block; }
 
 #title.screen.on { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -57,6 +60,7 @@ canvas { display: block; image-rendering: pixelated; background: #0e2a52; }
 
 .overlay { position: absolute; inset: 0; background: rgba(3,6,12,0.88); color: var(--fg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px; }
 .overlay h2 { color: var(--accent); margin: 0; letter-spacing: 0.08em; }
+.overlay .continue { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 6px 0; color: var(--accent); letter-spacing: 0.08em; }
 .overlay table { font-size: 12px; border-collapse: collapse; }
 .overlay td, .overlay th { padding: 2px 8px; text-align: right; }
 .overlay th { color: var(--muted); }

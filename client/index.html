@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pacific Skies</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%231b3a5c%27/%3E%3Cpath d=%27M7 1h2v5l6 3v2l-6-1v3l2 1v1H5v-1l2-1V10L1 11V9l6-3z%27 fill=%27%23e8e0c0%27/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -26,6 +27,7 @@
         <button id="join-link">Join via link</button>
       </div>
       <div class="sub" id="hiscore"></div>
+      <div class="sub controls-hint">WASD / arrows to fly · Space to fire · Shift or Q to loop · M to mute</div>
     </section>
 
     <section id="roomscreen" class="screen">
@@ -41,6 +43,7 @@
           <span id="rs-countdown" class="muted"></span>
           <button class="primary" id="rs-start">Start</button>
         </div>
+        <p id="rs-hint" class="muted" style="font-size:11px;margin:6px 0 0"></p>
         <div class="row" style="margin-top:8px">
           <input id="rs-chat" placeholder="Say something..." style="flex:1" />
         </div>
@@ -56,6 +59,7 @@
         <span class="score">SCORE <b id="hud-score">0</b></span>
       </div>
       <canvas id="view" width="384" height="576"></canvas>
+      <p class="touch-hint muted">Drag to fly, hold to fire, tap with a second finger to loop.</p>
     </section>
 
   </div>
