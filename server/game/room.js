@@ -46,10 +46,9 @@ export class Room {
   }
 
   join(ws, { pid, user, name, guestId }) {
-    if (this.state === 'playing') {
-      // Late join mid-game isn't supported (co-op is 1-2 players decided at start); reject.
-      if (this.clients.size >= MAX_PLAYERS && !this.clients.has(pid)) throw new Error('Room is full');
-    }
+    // Late join mid-game isn't supported (co-op is 1-2 players decided at start): once playing,
+    // only a player already in the room (reconnecting) may join again.
+    if (this.state !== 'lobby' && !this.clients.has(pid)) throw new Error('Game already in progress');
     if (this.full && !this.clients.has(pid)) throw new Error('Room is full');
     const finalGuestId = guestId || (user ? null : crypto.randomBytes(4).toString('hex'));
     this.clients.set(pid, { ws, user, name, ready: false, away: false, awayTimer: null, guestId: finalGuestId });
@@ -176,7 +175,9 @@ export class Room {
         for (const p of this.sim.players.values()) {
           if (!p.user) continue;
           this._announceAchievements(p.pid, stats.raise(p.user.id, 'stages_cleared_run_max', this._stagesClearedRun));
-          this._announceAchievements(p.pid, stats.raise(p.user.id, 'deepest_stage_reached', STAGE_COUNT - this.sim.stageNumber));
+          // stageNumber is still the stage just cleared here, so "stages cleared" is 32 - stage + 1
+          // (clearing stage 32 = 1 cleared; clearing stage 2 = 31 = reached stage 1).
+          this._announceAchievements(p.pid, stats.raise(p.user.id, 'deepest_stage_reached', STAGE_COUNT - this.sim.stageNumber + 1));
           if (ev.coop) this._announceAchievements(p.pid, stats.bump(p.user.id, 'coop_stage_clears', 1));
           const t = ev.tally.find((x) => x.pid === p.pid);
           if (t && t.untouched) this._announceAchievements(p.pid, stats.bump(p.user.id, 'untouched_stages', 1));

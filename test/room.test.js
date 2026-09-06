@@ -31,3 +31,14 @@ test('a solo player is the host and can start', () => {
   assert.equal(room.start('solo'), true);
   clearInterval(room.tickTimer);
 });
+
+test('nobody new can join once the game is playing, but an existing player may rejoin', () => {
+  const room = new Room({ id: 'r3', name: 'Live', seed: 's' });
+  const host = fakeClient(); room.clients.set('host', host);
+  assert.equal(room.start('host'), true);
+  const late = fakeClient();
+  assert.throws(() => room.join(late.ws, { pid: 'late', user: null, name: 'late', guestId: null }), /in progress/i);
+  assert.equal(room.clients.size, 1);
+  assert.doesNotThrow(() => room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null }));
+  clearInterval(room.tickTimer);
+});
