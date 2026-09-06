@@ -26,6 +26,42 @@ main { flex: 1; display: flex; flex-direction: column; align-items: center; padd
 
 #stage { position: relative; width: 384px; max-width: 100%; }
 canvas { display: block; image-rendering: pixelated; background: #0e2a52; max-width: 100%; height: auto; touch-action: none; }
+/* The live game canvas must fit the viewport on phones (portrait and landscape) without the page
+   scrolling: cap both dimensions and let the aspect ratio follow. */
+#game { position: relative; }
+#view { max-height: calc(100dvh - 150px); width: auto; margin: 0 auto; }
+#touch-controls { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; display: flex; justify-content: space-between; align-items: flex-end; padding: 14px; pointer-events: none; user-select: none; -webkit-user-select: none; }
+#touch-controls > * { pointer-events: auto; touch-action: none; }
+.tc-stick { position: relative; width: clamp(88px, 32vmin, 128px); height: clamp(88px, 32vmin, 128px); border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); background: rgba(6,9,15,0.35); }
+.tc-knob { position: absolute; left: 50%; top: 50%; width: 40%; height: 40%; transform-origin: center; translate: -50% -50%; border-radius: 50%; background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.8); transition: transform 40ms linear; }
+.tc-buttons { display: flex; flex-direction: column; gap: clamp(8px, 3vmin, 14px); align-items: flex-end; }
+.tc-btn { width: clamp(56px, 18vmin, 72px); height: clamp(56px, 18vmin, 72px); border-radius: 50%; border: 2px solid rgba(255,255,255,0.55); background: rgba(6,9,15,0.4); color: var(--fg); font-weight: bold; font-size: 13px; letter-spacing: 0.06em; padding: 0; -webkit-tap-highlight-color: transparent; }
+.tc-btn:active, .tc-btn.held { background: rgba(255,204,51,0.55); border-color: var(--accent); color: #201400; }
+.tc-fire { width: clamp(64px, 22vmin, 88px); height: clamp(64px, 22vmin, 88px); }
+.tc-loop { border-color: var(--blue); }
+
+/* Phones: a compact nav, and during play on a touch device the nav goes away entirely -- the
+   canvas needs every pixel, and Play Again / the browser back button get you out. */
+@media (max-width: 480px) {
+  nav.top { gap: 10px; padding: 8px 10px; }
+  nav.top .who { display: none; }
+  nav.top button { padding: 6px 8px; font-size: 12px; }
+}
+@media (pointer: coarse) {
+  body.in-game nav.top { display: none; }
+  body.in-game main { padding: 6px; }
+  body.in-game #view { max-height: calc(100dvh - 78px); }
+}
+/* Landscape phones: the canvas is height-bound and narrow, so widen the game area to the whole
+   viewport and park the stick and buttons on either side of the canvas instead of over it. */
+@media (pointer: coarse) and (orientation: landscape) {
+  body.in-game #stage, body.in-game #game { width: 100vw; max-width: 100vw; }
+  body.in-game .touch-hint { display: none; }
+  body.in-game #hud { max-width: 384px; margin: 0 auto; }
+  body.in-game #view { max-height: calc(100dvh - 48px); }
+  body.in-game #touch-controls { top: 0; height: auto; align-items: center; padding: 0 4vw; }
+  body.in-game .tc-buttons { flex-direction: row-reverse; align-items: center; }
+}
 
 .screen { display: none; width: 384px; max-width: 100%; }
 .touch-hint { display: none; font-size: 11px; text-align: center; margin: 6px 0 0; }

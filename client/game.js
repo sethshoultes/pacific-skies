@@ -11,7 +11,7 @@ initAudio();
 
 // ---------------- screens ----------------
 const screens = { title: q('#title'), room: q('#roomscreen'), game: q('#game') };
-function show(name) { for (const k in screens) screens[k].classList.toggle('on', k === name); }
+function show(name) { for (const k in screens) screens[k].classList.toggle('on', k === name); document.body.classList.toggle('in-game', name === 'game'); }
 function q(sel) { return document.querySelector(sel); }
 
 // ---------------- attract mode demo flight (title screen) ----------------
@@ -363,24 +363,58 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
-// ---- touch: drag anywhere on the canvas to fly toward the finger (autofire while touching);
-// a second finger triggers a loop-the-loop. Canvas pixels map back to world units because the
-// canvas may be scaled down by CSS on small screens.
-const touch = { active: false, x: 0, y: 0, loop: false };
+// ---- touch controls. On coarse-pointer devices (or ?touch=1) an on-screen layer appears over
+// the lower part of the canvas: a virtual joystick on the left, FIRE (hold) and LOOP (tap) on the
+// right. Dragging anywhere on the sky itself also works -- relative drag: the plane moves by the
+// finger's displacement (slightly amplified), so the thumb never has to sit on top of the plane.
+// Each element handles its own touches, so the stick and the buttons work simultaneously.
+const touch = { drag: false, tx: 0, ty: 0, ox: 0, oy: 0, px: 0, py: 0, sx: 0, sy: 0, stick: false, fire: false, loop: false };
+const TOUCH_UI = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || new URLSearchParams(location.search).get('touch') === '1';
+if (TOUCH_UI) q('#touch-controls').hidden = false;
+
 function canvasPoint(t) {
   const r = canvas.getBoundingClientRect();
   return { x: (t.clientX - r.left) * (WORLD_W / r.width), y: (t.clientY - r.top) * (WORLD_H / r.height) };
 }
-function onTouch(e) {
+function onCanvasTouch(e) {
   if (!screens.game.classList.contains('on')) return;
   e.preventDefault();
-  if (e.touches.length === 0) { touch.active = false; return; }
+  if (e.touches.length === 0) { touch.drag = false; return; }
   const p = canvasPoint(e.touches[0]);
-  // Fly a little above the finger so the thumb doesn't cover the plane.
-  touch.active = true; touch.x = p.x; touch.y = p.y - 40;
-  if (e.type === 'touchstart' && e.touches.length >= 2) touch.loop = true;
+  if (e.type === 'touchstart') {
+    const me = latestSnap?.players.find((pl) => pl.pid === myPid);
+    touch.ox = p.x; touch.oy = p.y; touch.px = me?.x ?? p.x; touch.py = me?.y ?? p.y;
+    if (e.touches.length >= 2) touch.loop = true;
+  }
+  touch.drag = true;
+  touch.tx = touch.px + (p.x - touch.ox) * 1.25;
+  touch.ty = touch.py + (p.y - touch.oy) * 1.25;
 }
-for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) canvas.addEventListener(ev, onTouch, { passive: false });
+for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) canvas.addEventListener(ev, onCanvasTouch, { passive: false });
+
+// virtual joystick: vector from the pad centre, normalised to the pad radius, 8-way with a dead zone
+const stickEl = q('#tc-stick'), knobEl = q('#tc-knob');
+function onStick(e) {
+  e.preventDefault();
+  if (e.touches.length === 0) { touch.stick = false; touch.sx = 0; touch.sy = 0; knobEl.style.transform = ''; return; }
+  const r = stickEl.getBoundingClientRect();
+  const t = e.targetTouches[0] || e.touches[0];
+  const radius = r.width / 2;
+  let dx = (t.clientX - (r.left + radius)) / radius, dy = (t.clientY - (r.top + radius)) / radius;
+  const len = Math.hypot(dx, dy);
+  if (len > 1) { dx /= len; dy /= len; }
+  touch.stick = true; touch.sx = dx; touch.sy = dy;
+  knobEl.style.transform = `translate(${dx * radius * 0.6}px, ${dy * radius * 0.6}px)`;
+}
+for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) stickEl.addEventListener(ev, onStick, { passive: false });
+
+const fireBtn = q('#tc-fire'), loopBtn = q('#tc-loop');
+const hold = (el, on, off) => {
+  for (const ev of ['touchstart', 'pointerdown']) el.addEventListener(ev, (e) => { e.preventDefault(); el.classList.add('held'); on(); }, { passive: false });
+  for (const ev of ['touchend', 'touchcancel', 'pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, (e) => { e.preventDefault(); el.classList.remove('held'); off(); }, { passive: false });
+};
+hold(fireBtn, () => { touch.fire = true; }, () => { touch.fire = false; });
+hold(loopBtn, () => { touch.loop = true; }, () => {});
 
 function currentInput() {
   const input = {
@@ -391,15 +425,21 @@ function currentInput() {
     fire: keys.has('Space'),
     loop: keys.has('ShiftLeft') || keys.has('ShiftRight') || keys.has('KeyQ'),
   };
-  if (touch.active) {
+  if (touch.stick) {
+    const dead = 0.25;
+    if (touch.sx < -dead) input.left = true; else if (touch.sx > dead) input.right = true;
+    if (touch.sy < -dead) input.up = true; else if (touch.sy > dead) input.down = true;
+  }
+  if (touch.drag) {
     const me = latestSnap?.players.find((p) => p.pid === myPid);
     if (me) {
-      const dead = 6;
-      if (touch.x < me.x - dead) input.left = true; else if (touch.x > me.x + dead) input.right = true;
-      if (touch.y < me.y - dead) input.up = true; else if (touch.y > me.y + dead) input.down = true;
+      const dead = 5;
+      if (touch.tx < me.x - dead) input.left = true; else if (touch.tx > me.x + dead) input.right = true;
+      if (touch.ty < me.y - dead) input.up = true; else if (touch.ty > me.y + dead) input.down = true;
     }
-    input.fire = true;
+    input.fire = true; // dragging on the sky autofires; the FIRE button is for joystick players
   }
+  if (touch.fire) input.fire = true;
   if (touch.loop) { input.loop = true; touch.loop = false; }
   return input;
 }

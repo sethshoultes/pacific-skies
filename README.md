@@ -31,9 +31,12 @@ Requires Node.js 22.5+ (uses the built-in `node:sqlite`). Data lives in `./data/
 - **Loop-the-loop** — Shift or Q: flips the plane out of the plane of play for ~1.2s, invulnerable
   and unable to shoot. 3 loops per life; replenished on death or by the POW loop item.
 - **Mute** — M
-- **Touch** (phones/tablets) — drag anywhere on the canvas to fly toward your finger (the plane
-  autofires while you touch), tap with a second finger to loop. The canvas scales down to fit
-  narrow screens.
+- **Touch** (phones/tablets) — an on-screen control layer appears over the lower part of the
+  canvas: a virtual joystick on the left, a big **FIRE** button (hold to autofire) and a **LOOP**
+  button (tap) on the right. You can also drag anywhere on the sky: the plane follows your finger's
+  movement (relative drag, so your thumb never covers the plane) and autofires while you touch.
+  The canvas scales to fit the screen in portrait or landscape; add `?touch=1` to the URL to force
+  the touch layer on a desktop for testing.
 
 ## How to play
 
