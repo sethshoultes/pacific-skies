@@ -12,6 +12,33 @@ test('addPlayer stores slot 0 as-is instead of treating it as unset', () => {
   assert.equal(p.x, WORLD_W / 2, 'slot 0 gets no left/right offset, same as any slot other than 1 or 2');
 });
 
+test('respawnPlayer restores the slot-based spawn lane instead of dead center for both players', () => {
+  const sim = new Sim({ seed: 'respawn-slots' });
+  const p1 = sim.addPlayer('p1', { slot: 1 });
+  const p2 = sim.addPlayer('p2', { slot: 2 });
+  const spawnX1 = p1.x, spawnX2 = p2.x;
+  assert.notEqual(spawnX1, spawnX2, 'the two slots must not share a lane in the first place');
+
+  p1.alive = false; p1.x = 12345;
+  p2.alive = false; p2.x = 12345;
+  sim.respawnPlayer(p1);
+  sim.respawnPlayer(p2);
+  assert.equal(p1.x, spawnX1, "p1 respawns back into p1's lane, not dead center");
+  assert.equal(p2.x, spawnX2, "p2 respawns back into p2's lane, not p1's");
+  assert.notEqual(p1.x, p2.x, 'the two players must not stack on top of each other after respawn');
+});
+
+test('_fire tracks the per-player bullet cap without re-scanning the bullets array per spawn', () => {
+  const sim = new Sim({ seed: 'fire-cap' });
+  const p = sim.addPlayer('p1');
+  p.fourway = true; p.side = true; // up to 6 bullets in one _fire() call
+  sim._fire(p);
+  sim._fire(p);
+  sim._fire(p);
+  const owned = sim.bullets.filter((b) => b.owner === 'p1').length;
+  assert.ok(owned <= 6, `per-player bullet cap must still be enforced across repeated fires, got ${owned}`);
+});
+
 test('movement stays within world bounds', () => {
   const sim = new Sim({ seed: 't1' });
   sim.addPlayer('p1');

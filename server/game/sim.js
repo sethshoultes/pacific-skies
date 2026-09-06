@@ -40,10 +40,14 @@ export class Sim {
     this.ended = false;
   }
 
+  // Shared by addPlayer and respawnPlayer so both lay out co-op players in their own lane instead
+  // of stacking them dead center.
+  static _spawnX(slot) { return WORLD_W / 2 + (slot === 1 ? 40 : slot === 2 ? -40 : 0); }
+
   addPlayer(pid, opts = {}) {
     const slot = opts.slot ?? 1;
     const p = {
-      pid, x: WORLD_W / 2 + (slot === 1 ? 40 : slot === 2 ? -40 : 0), y: WORLD_H - 80,
+      pid, x: Sim._spawnX(slot), y: WORLD_H - 80,
       alive: true, lives: START_LIVES, score: 0, loops: START_LOOPS,
       looping: false, loopEndAt: 0, loopCooldownUntil: 0, invulnUntil: this.time + RESPAWN_INVULN_MS / 1000,
       shotCooldown: 0, side: false, fourway: false,
@@ -129,9 +133,14 @@ export class Sim {
   _fire(p) {
     // Accuracy is hits / shotsFired and hits are counted per bullet, so count shots per bullet
     // actually spawned too; otherwise a four-way or side-gun volley could push accuracy past 100%.
+    // Count this player's live bullets once up front and track it locally as spawn() adds more,
+    // rather than re-filtering the full bullets array on every one of up to 6 calls per shot --
+    // this runs in the hottest loop of the sim.
+    let ownedCount = this.bullets.reduce((n, b) => n + (b.owner === p.pid ? 1 : 0), 0);
     const spawn = (vx, vy, x = p.x) => {
-      if (this.bullets.filter((b) => b.owner === p.pid).length >= MAX_PLAYER_SHOTS) return;
+      if (ownedCount >= MAX_PLAYER_SHOTS) return;
       this.bullets.push({ id: uid(), x, y: p.y - 10, vx, vy, owner: p.pid });
+      ownedCount++;
       p.shotsFired++; this.stats.shotsFired++;
     };
     if (p.fourway) {
@@ -395,7 +404,7 @@ export class Sim {
     return out;
   }
   respawnPlayer(p) {
-    p.alive = true; p.x = WORLD_W / 2; p.y = WORLD_H - 80;
+    p.alive = true; p.x = Sim._spawnX(p.slot); p.y = WORLD_H - 80;
     p.invulnUntil = this.time + RESPAWN_INVULN_MS / 1000;
     p.respawnAt = null;
   }
