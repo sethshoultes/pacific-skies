@@ -33,6 +33,19 @@ function hashIp(ip) {
 
 const insertEvent = db.prepare('INSERT INTO events (ts, user_id, guest_id, kind, data, ip_hash) VALUES (?, ?, ?, ?, ?, ?)');
 
+const EVENT_DATA_MAX = 4000;
+// Slicing a JSON string at a byte cap can leave invalid/truncated JSON in the column (and if
+// JSON.stringify itself throws -- e.g. a BigInt or circular structure -- the whole event used to
+// be dropped). This always returns either the original valid JSON or a small, always-valid
+// sentinel object, never a mangled partial string.
+function safeEventJson(data) {
+  if (data === null || data === undefined) return null;
+  let s;
+  try { s = JSON.stringify(data); } catch { return JSON.stringify({ truncated: true, reason: 'unserializable' }); }
+  if (s.length <= EVENT_DATA_MAX) return s;
+  return JSON.stringify({ truncated: true, originalLength: s.length });
+}
+
 /** Record one event. Best-effort: telemetry must never be able to break the request/WS handler
  *  that calls it. */
 export function recordEvent({ kind, userId = null, guestId = null, data = null, ip = null } = {}) {
@@ -43,7 +56,7 @@ export function recordEvent({ kind, userId = null, guestId = null, data = null, 
       userId || null,
       guestId ? String(guestId).slice(0, 64) : null,
       String(kind).slice(0, 40),
-      data ? JSON.stringify(data).slice(0, 4000) : null,
+      safeEventJson(data),
       ip ? hashIp(ip) : null,
     );
   } catch { /* never throw from telemetry */ }

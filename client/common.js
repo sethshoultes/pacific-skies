@@ -41,10 +41,14 @@ export function track(kind, data) {
   } catch {}
 }
 
+// Capped so a long session hitting many distinct error messages can't grow this without bound;
+// Set preserves insertion order, so the oldest entry is whatever `.values().next()` yields.
+const MAX_SEEN_CLIENT_ERRORS = 50;
 const seenClientErrors = new Set();
 function reportClientError(message, stack) {
   const key = String(message || 'Error').slice(0, 300);
   if (seenClientErrors.has(key)) return;
+  if (seenClientErrors.size >= MAX_SEEN_CLIENT_ERRORS) seenClientErrors.delete(seenClientErrors.values().next().value);
   seenClientErrors.add(key);
   try {
     const headers = { 'Content-Type': 'application/json' };
