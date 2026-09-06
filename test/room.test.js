@@ -91,3 +91,20 @@ test('rejoining with the same pid clears a stale awayTimer instead of leaking it
   assert.equal(room.clients.get('host').awayTimer, null);
   clearInterval(room.tickTimer);
 });
+
+test('slot assignment does not collide when the original slot-1 player leaves and a new one joins', () => {
+  const room = new Room({ id: 'r7', name: 'Slots', seed: 's' });
+  const p1 = fakeClient(); const p2 = fakeClient(); const p3 = fakeClient();
+  room.join(p1.ws, { pid: 'p1', user: null, name: 'p1', guestId: null });
+  room.join(p2.ws, { pid: 'p2', user: null, name: 'p2', guestId: null });
+  assert.equal(room.sim.players.get('p1').slot, 1);
+  assert.equal(room.sim.players.get('p2').slot, 2);
+
+  room.leave('p1'); // slot 1 is now free; clients.size alone would mislead the next join
+  room.join(p3.ws, { pid: 'p3', user: null, name: 'p3', guestId: null });
+  assert.equal(room.sim.players.get('p3').slot, 1, 'the new player takes the now-free slot 1');
+  assert.notEqual(
+    room.sim.players.get('p3').slot, room.sim.players.get('p2').slot,
+    'must not collide with the still-present slot-2 player',
+  );
+});

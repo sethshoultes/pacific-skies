@@ -336,7 +336,10 @@ export class Sim {
         if (e.dead) continue;
         const r = e.type === 'boss' ? 20 : e.type === 'midboss' ? 16 : 8;
         if (dist2(p.x, p.y, e.x, e.y) < r * r) {
-          if (invuln) { if (p.looping) p.loopDodges++; continue; }
+          // loopDodges/"Loop Master" is specifically about dodging bullets while looping (see
+          // shared/achievements.js) -- surviving contact with an enemy plane doesn't count, or
+          // the achievement could be farmed by ramming enemies during a loop.
+          if (invuln) continue;
           this._killPlayer(p);
           if (e.type === 'small') { e.dead = true; }
           break;
@@ -345,7 +348,10 @@ export class Sim {
       for (const b of this.enemyBullets) {
         if (b.dead) continue;
         if (dist2(p.x, p.y, b.x, b.y) < 8 * 8) {
-          if (invuln) { if (p.looping) p.loopDodges++; b.dead = true; continue; }
+          if (invuln) {
+            if (p.looping) { p.loopDodges++; this.onEvent({ t: 'loop-dodge', pid: p.pid }); }
+            b.dead = true; continue;
+          }
           b.dead = true;
           this._killPlayer(p);
         }

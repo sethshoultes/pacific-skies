@@ -107,6 +107,31 @@ test('loop-the-loop grants temporary invulnerability and consumes a charge', () 
   assert.equal(p.looping, false);
 });
 
+test('loopDodges only counts bullets dodged while looping, not enemy-plane contact', () => {
+  const sim = new Sim({ seed: 'loop-dodge' });
+  sim.addPlayer('p1');
+  const p = sim.players.get('p1');
+  sim.setInput('p1', { loop: true });
+  sim.step();
+  assert.equal(p.looping, true);
+  p.invulnUntil = -1;
+
+  // Surviving contact with an enemy plane while looping must not count as a "loop dodge" --
+  // that stat/achievement is specifically about dodging bullets (see shared/achievements.js),
+  // and counting plane contact would let it be farmed by ramming enemies during a loop.
+  const enemy = sim._mkSmall('straight', p.x, p.y, { vy: 0 });
+  sim.enemies.push(enemy);
+  sim._checkCollisions();
+  assert.equal(p.alive, true);
+  assert.equal(p.loopDodges, 0, 'plane contact must not increment loopDodges');
+
+  // Dodging an actual enemy bullet while looping must count.
+  sim.enemyBullets.push({ id: 'b1', x: p.x, y: p.y, vx: 0, vy: 0 });
+  sim._checkCollisions();
+  assert.equal(p.alive, true);
+  assert.equal(p.loopDodges, 1, 'dodging a bullet while looping must increment loopDodges');
+});
+
 test('player cannot fire while looping', () => {
   const sim = new Sim({ seed: 't6' });
   sim.addPlayer('p1');

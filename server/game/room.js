@@ -59,7 +59,15 @@ export class Room {
     // to resume another player's slot.
     const resumeToken = crypto.randomBytes(16).toString('hex');
     this.clients.set(pid, { ws, user, name, ready: false, away: false, awayTimer: null, guestId: finalGuestId, resumeToken });
-    if (!this.sim.players.has(pid)) this.sim.addPlayer(pid, { slot: this.clients.size });
+    if (!this.sim.players.has(pid)) {
+      // Pick the lowest free slot among sim players still in the room, not clients.size -- if the
+      // original slot-1 host left, a remaining slot-2 player plus clients.size would hand the new
+      // joiner slot 2 again, stacking both players in the same spawn lane.
+      const takenSlots = new Set([...this.sim.players.values()].map((pl) => pl.slot));
+      let slot = 1;
+      while (takenSlots.has(slot)) slot++;
+      this.sim.addPlayer(pid, { slot });
+    }
     // The stats/achievements hooks key off the sim player's account; guests stay null.
     this.sim.players.get(pid).user = user || null;
     this.sendTo(pid, { t: 'joined', room: this.info(), pid, you: { name }, resumeToken });
@@ -180,6 +188,11 @@ export class Room {
         for (const p of this.sim.players.values()) {
           if (p.user) this._announceAchievements(p.pid, stats.bump(p.user.id, 'bosses', 1));
         }
+        break;
+      }
+      case 'loop-dodge': {
+        const p = this.sim.players.get(ev.pid);
+        if (p?.user) this._announceAchievements(ev.pid, stats.bump(p.user.id, 'loop_dodges', 1));
         break;
       }
       case 'stage-clear': {

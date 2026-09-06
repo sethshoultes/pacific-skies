@@ -25,8 +25,11 @@ export function register(username, password) {
 export function login(username, password) {
   const u = db.prepare('SELECT * FROM users WHERE username = ?').get(username || '');
   if (!u) throw new Error('Unknown user or wrong password');
-  const h = hash(String(password || ''), u.salt);
-  if (!crypto.timingSafeEqual(Buffer.from(h), Buffer.from(u.pass_hash))) throw new Error('Unknown user or wrong password');
+  const candidate = Buffer.from(hash(String(password || ''), u.salt));
+  const stored = Buffer.from(u.pass_hash);
+  // timingSafeEqual throws on a length mismatch -- guard it so a corrupted/unexpected stored
+  // hash fails login cleanly instead of throwing a 500.
+  if (candidate.length !== stored.length || !crypto.timingSafeEqual(candidate, stored)) throw new Error('Unknown user or wrong password');
   return createSession(u.id);
 }
 
