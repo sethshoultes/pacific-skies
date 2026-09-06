@@ -1,6 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,9 +12,18 @@ process.env.DATA_DIR = dataDir;
 const auth = await import('../server/auth.js');
 const { db } = await import('../server/db.js');
 
+// Belt-and-suspenders cleanup: `after` handles the normal exit path, `process.on('exit')` covers
+// a crash/early-exit that skips node:test's hooks. Both are guarded by an explicit assertion that
+// the path is really the one mkdtempSync just created under os.tmpdir() -- never anything else --
+// before ever calling an rm with recursive:true.
+function cleanupDataDir() {
+  if (!dataDir.startsWith(tmpdir())) return; // never rm a path we didn't just create ourselves
+  try { rmSync(dataDir, { recursive: true, force: true }); } catch {}
+}
+process.on('exit', cleanupDataDir);
 after(async () => {
   try { db.close(); } catch {}
-  await rm(dataDir, { recursive: true, force: true }).catch(() => {});
+  if (dataDir.startsWith(tmpdir())) await rm(dataDir, { recursive: true, force: true }).catch(() => {});
 });
 
 test('login fails cleanly (not a crash) if the stored password hash is a different length', () => {
