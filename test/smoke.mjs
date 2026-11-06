@@ -10,6 +10,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { stubAnalytics } from './stub-analytics.mjs';
 
 function log(msg) { console.log(`[smoke] ${msg}`); }
 
@@ -74,6 +75,7 @@ async function main() {
     log('server is listening');
 
     browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+    stubAnalytics(browser);
     const page = await browser.newPage();
 
     const pageErrors = [];

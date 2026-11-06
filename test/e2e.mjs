@@ -20,6 +20,7 @@ import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import WebSocket from 'ws';
+import { stubAnalytics } from './stub-analytics.mjs';
 
 function log(msg) { console.log(`[e2e] ${msg}`); }
 
@@ -101,7 +102,9 @@ async function main() {
     log('server is listening');
 
     browserA = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+    stubAnalytics(browserA);
     browserB = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+    stubAnalytics(browserB);
     const pageA = await browserA.newPage();
     const pageB = await browserB.newPage();
     const pageErrors = [];
