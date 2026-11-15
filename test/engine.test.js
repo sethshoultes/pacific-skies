@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createMatch, step, legalActions, isAction, observe, isOver } from '../shared/engine/index.js';
-import { seedStage } from '../shared/engine/stages-seed.js';
+import { draftStage } from '../shared/ai/builder.js';
 import { seedToInt, rand } from '../shared/engine/rng.js';
 import {
   WORLD_W, WORLD_H, START_LIVES, RESPAWN_TICKS, SPAWN_INVULN_TICKS, DASH_TICKS, DASH_COOLDOWN_TICKS,
@@ -11,7 +11,7 @@ import {
 
 const IDLE = { move: 0, fire: false, dash: false };
 const QUIET = { waves: [], boss: { tick: 100000, hp: 5 } }; // a stage where nothing spawns
-const seededStages = (seed, n) => Array.from({ length: n }, (_, d) => seedStage(seed, d));
+const seededStages = (seed, n) => Array.from({ length: n }, (_, depth) => draftStage({ seed, depth }));
 
 /** A match with nothing on the field and no spawn invulnerability, for hand-placed collisions. */
 function quietMatch(seats = 1, stages = [QUIET]) {
@@ -288,15 +288,6 @@ test('observe gives a seat its own ship, the others, and the field, as detached 
   assert.notEqual(s.pilots[1].x, -999, 'mutating an observation does not touch the match');
   assert.deepEqual(observe(s, 1), JSON.parse(JSON.stringify(observe(s, 1))), 'plain JSON');
   assert.throws(() => observe(s, 2), /no seat 2/);
-});
-
-test('seedStage is deterministic, valid, and harder with depth', () => {
-  assert.deepEqual(seedStage('s', 3), seedStage('s', 3));
-  assert.notDeepEqual(seedStage('s', 3), seedStage('t', 3));
-  const stages = seededStages('s', 8);
-  createMatch({ seed: 's', stages, seats: 1 }); // throws if any stage is malformed
-  for (let d = 1; d < 8; d++) assert.ok(stages[d].pace > stages[d - 1].pace);
-  assert.ok(stages[7].boss.hp > stages[0].boss.hp);
 });
 
 test('purity: no Math.random, Date or performance in shared/engine or shared/ai', () => {

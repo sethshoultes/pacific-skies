@@ -83,7 +83,7 @@ function serveStatic(req, res, urlPath) {
   let rel;
   try { rel = decodeURIComponent(urlPath); } catch { res.writeHead(400); return res.end(); }
   if (rel.includes('\0')) { res.writeHead(400); return res.end(); }
-  if (rel === '/') rel = '/index.html';
+  if (rel.endsWith('/')) rel += 'index.html';
   const isShared = rel.startsWith('/shared/');
   const base = isShared ? path.join(ROOT, 'shared') : path.join(ROOT, 'client');
   // Strip the leading slash so the join is unambiguously relative to `base` (path.join would keep

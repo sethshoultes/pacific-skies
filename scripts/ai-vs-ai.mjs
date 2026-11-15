@@ -3,6 +3,7 @@
 import { parseArgs } from 'node:util';
 import { playAiMatch } from '../shared/ai/match.js';
 import { LEVELS } from '../shared/ai/pilot.js';
+import { buildStages } from '../shared/ai/builder.js';
 
 const { values } = parseArgs({
   options: { seed: { type: 'string', default: '1' }, level: { type: 'string', default: 'hard' }, stages: { type: 'string', default: '6' } },
@@ -11,4 +12,4 @@ if (!LEVELS[values.level]) {
   console.error(`--level must be one of ${Object.keys(LEVELS).join(', ')}`);
   process.exit(2);
 }
-console.log(JSON.stringify(playAiMatch({ seed: values.seed, levels: [values.level, values.level], stageCount: Number(values.stages) })));
+console.log(JSON.stringify(playAiMatch({ seed: values.seed, levels: [values.level, values.level], stages: buildStages(values.seed, Number(values.stages)) })));
