@@ -1,5 +1,5 @@
 // Builds a match's stages off the main thread: each one is drafted and bot-checked before it ships.
-import { buildStage } from '../../shared/ai/builder.js';
+import { buildStage } from '../shared/ai/builder.js';
 
 self.onmessage = ({ data: { seed, count } }) => {
   const stages = [];

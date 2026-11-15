@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // End-to-end smoke test: boots the real server, drives a real browser (Playwright/Chromium)
-// through the title screen -> quick play -> a few seconds of live flight -- and checks the
-// static pages and stage-data validation are clean. Not a node:test file, run via `npm run smoke`.
+// through the title screen -> a solo flight on the page's own engine -> quick play -> a few seconds
+// of live online flight, and checks the static pages are clean. Not a node:test file, run via `npm run smoke`.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -74,7 +74,7 @@ async function main() {
     ]);
     log('server is listening');
 
-    browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+    browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--mute-audio'] });
     stubAnalytics(browser);
     const page = await browser.newPage();
 
@@ -97,14 +97,22 @@ async function main() {
     }
 
     await page.goto(baseUrl + '/', { waitUntil: 'load', timeout: 15_000 });
-    log('title screen loaded, starting quick play');
-    await page.fill('#gname', 'SmokeTest');
+    log('title screen loaded, waiting for the AI to chart the stages');
+    await page.waitForSelector('#fly:not([disabled])', { timeout: 30_000 });
+    await page.click('#fly');
+    await page.waitForSelector('body[data-screen="playing"]', { timeout: 5_000 });
+    log('solo flight on the page engine for 1s, then back to the title');
+    await page.waitForTimeout(1000);
+    await page.goto(baseUrl + '/', { waitUntil: 'load', timeout: 15_000 });
+
+    log('starting quick play');
+    await page.fill('#callsign', 'SmokeTest');
     await page.click('#quick');
-    log('waiting for the pre-game room screen');
-    await page.waitForSelector('#roomscreen.on', { timeout: 15_000 });
+    log('waiting for the room lobby');
+    await page.waitForSelector('#room:not([hidden])', { timeout: 15_000 });
     log('solo host -- clicking Start');
     await page.click('#rs-start');
-    await page.waitForSelector('#game.on', { timeout: 15_000 });
+    await page.waitForSelector('body[data-screen="playing"]', { timeout: 30_000 });
     log('in flight, holding "d" and Space for 3s');
     await page.keyboard.down('d');
     await page.keyboard.down('Space');
@@ -112,16 +120,9 @@ async function main() {
     await page.keyboard.up('d');
     await page.keyboard.up('Space');
 
-    // Regression check: #touch-controls starts `hidden` in the HTML and game.js only clears that
-    // attribute for a touch-capable device. A plain desktop browser (no coarse pointer, no touch)
-    // must never actually render it -- CSS `display: flex` on the bare selector would otherwise
-    // out-specificity the UA [hidden]{display:none} rule and show it regardless of the attribute.
-    log('checking #touch-controls stays hidden on a non-touch browser');
-    const touchControlsHidden = await page.evaluate(() => {
-      const el = document.querySelector('#touch-controls');
-      return el.hidden && getComputedStyle(el).display === 'none';
-    });
-    if (!touchControlsHidden) throw new Error('#touch-controls is visible on a non-touch browser (CSS is not honoring [hidden])');
+    log('checking the Dash button stays hidden on a non-touch browser');
+    const dashHidden = await page.evaluate(() => getComputedStyle(document.querySelector('#dash')).display === 'none');
+    if (!dashHidden) throw new Error('#dash is visible on a non-touch browser');
 
     if (pageErrors.length) throw new Error(`page errors:\n${pageErrors.join('\n')}`);
     if (consoleErrors.length) throw new Error(`console errors:\n${consoleErrors.join('\n')}`);
@@ -132,7 +133,7 @@ async function main() {
     const health = await fetch(baseUrl + '/api/health').then((r) => r.json());
     if (!health.ok) throw new Error('health check failed');
 
-    log('SMOKE PASS: static pages, quick play, and 3s of live flight all OK');
+    log('SMOKE PASS: static pages, a solo flight, quick play and 3s of online flight all OK');
   } catch (err) {
     failed = true;
     console.error('[smoke] FAILED:', err && err.stack || err);

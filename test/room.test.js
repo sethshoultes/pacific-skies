@@ -9,7 +9,8 @@ import path from 'node:path';
 // another test file's run and make assertions order-dependent/flaky.
 const dataDir = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
 process.env.DATA_DIR = dataDir;
-const { Room } = await import('../server/game/room.js');
+const { Room, MATCH_TYPES } = await import('../server/game/room.js');
+const { isAction } = await import('../shared/engine/index.js');
 const { Lobby, MAX_ROOMS, MAX_LISTED, EMPTY_ROOM_MS } = await import('../server/game/lobby.js');
 const { db } = await import('../server/db.js');
 
@@ -32,217 +33,323 @@ function fakeClient() {
   return { ws: { readyState: 1, send: (s) => sent.push(JSON.parse(s)) }, sent, user: null, name: 'x', ready: false, away: false, guestId: null };
 }
 
-test('only the host can start a co-op room directly; start() reports whether it started', () => {
-  const room = new Room({ id: 'r1', name: 'Test', seed: 's' });
+// Rooms in these tests build one stage, so a start is a fraction of a second.
+const makeRoom = (opts) => new Room({ seed: 's', name: 'Test', stageCount: 1, ...opts });
+const playing = async (room) => { await room.built; await new Promise((r) => setImmediate(r)); assert.equal(room.state, 'playing'); };
+const stop = (room) => { clearInterval(room.tickTimer); room.tickTimer = null; };
+const IDLE = { move: 0, fire: false, dash: false };
+
+test('only the host can start a co-op room directly; start() reports whether it was accepted', async () => {
+  const room = makeRoom({ id: 'r1' });
   const host = fakeClient(); const guest = fakeClient();
-  room.clients.set('host', host); room.clients.set('guest', guest);
+  room.join(host.ws, { pid: 'host', user: null, name: 'H' });
+  room.join(guest.ws, { pid: 'guest', user: null, name: 'G' });
   assert.equal(room.start('guest'), false, 'non-host start must be refused');
   assert.equal(room.state, 'lobby');
   assert.ok(guest.sent.some((m) => m.t === 'error' && /host/i.test(m.error)), 'guest gets an error');
   assert.equal(room.start('host'), true);
-  assert.equal(room.state, 'playing');
+  assert.equal(room.state, 'starting');
   assert.equal(room.start('host'), false, 'a second start is a no-op');
-  clearInterval(room.tickTimer);
+  await playing(room);
+  const start = host.sent.find((m) => m.t === 'start');
+  assert.equal(start.stages.length, 1);
+  assert.deepEqual(start.seats.map((s) => s.kind), ['human', 'human']);
+  room.close();
 });
 
-test('a solo player is the host and can start', () => {
-  const room = new Room({ id: 'r2', name: 'Solo', seed: 's' });
-  const solo = fakeClient(); room.clients.set('solo', solo);
+test('a solo player is the host and can start', async () => {
+  const room = makeRoom({ id: 'r2' });
+  room.join(fakeClient().ws, { pid: 'solo', user: null, name: 'S' });
   assert.equal(room.start('solo'), true);
-  clearInterval(room.tickTimer);
+  await playing(room);
+  assert.equal(room.match.pilots.length, 1, 'co-op with one player flies one kite');
+  room.close();
 });
 
-test('nobody new can join once the game is playing, but an existing player may rejoin', () => {
-  const room = new Room({ id: 'r3', name: 'Live', seed: 's' });
-  const host = fakeClient(); room.clients.set('host', host);
+test('nobody new can join once the match is starting, but an existing player may rejoin', () => {
+  const room = makeRoom({ id: 'r3' });
+  const host = fakeClient();
+  room.join(host.ws, { pid: 'host', user: null, name: 'x' });
   assert.equal(room.start('host'), true);
   const late = fakeClient();
   assert.throws(() => room.join(late.ws, { pid: 'late', user: null, name: 'late', guestId: null }), /in progress/i);
   assert.equal(room.clients.size, 1);
   assert.doesNotThrow(() => room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null }));
-  clearInterval(room.tickTimer);
+  room.close();
 });
 
-test('joining attaches the account to the sim player so stats hooks can record for logged-in users', () => {
-  const room = new Room({ id: 'r4', name: 'Stats', seed: 's' });
+test('every match type seats the right pilots, and the host alone picks it in the lobby', () => {
+  const room = makeRoom({ id: 'r-types' });
+  room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A' });
+  room.join(fakeClient().ws, { pid: 'b', user: null, name: 'B' });
+  const plan = (type, level = 'medium') => { room.setType('a', type, level); return room.seatPlan().map((s) => s.pid ?? s.level); };
+  assert.deepEqual(plan('coop'), ['a', 'b']);
+  assert.deepEqual(plan('race'), ['a', 'b']);
+  assert.deepEqual(plan('wingman', 'easy'), ['a', 'easy'], 'b watches');
+  assert.deepEqual(plan('rival', 'hard'), ['a', 'hard']);
+  assert.deepEqual(plan('watch'), ['medium', 'medium']);
+  assert.deepEqual(Object.keys(MATCH_TYPES), ['coop', 'race', 'wingman', 'rival', 'watch']);
+  assert.throws(() => room.setType('b', 'coop'), /host/);
+  assert.throws(() => room.setType('a', 'deathmatch'), /Unknown match type/);
+  assert.throws(() => room.setType('a', 'coop', 'godlike'), /Unknown AI level/);
+  assert.throws(() => room.setType('a', 'toString'), /Unknown match type/);
+  room.leave('b');
+  room.setType('a', 'race');
+  assert.throws(() => room.seatPlan(), /needs 2 players/);
+  assert.equal(room.start('a'), false, 'a race needs two players');
+  room.close();
+});
+
+test('act: a legal Action is taken; malformed, illegal or off-seat ones are refused', async () => {
+  const room = makeRoom({ id: 'r-act' });
+  room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A' });
+  room.join(fakeClient().ws, { pid: 'b', user: null, name: 'B' });
+  assert.throws(() => room.act('a', IDLE), /No match/);
+  room.setType('a', 'wingman');
+  room.start('a');
+  await playing(room);
+  stop(room);
+  room.act('a', { move: 3, fire: true, dash: true });
+  assert.deepEqual(room.inputs[0], { move: 3, fire: true, dash: true });
+  for (const bad of [null, 'x', 7, [], {}, { move: 9, fire: true, dash: false }, { move: 1.5, fire: true, dash: false },
+    { move: 1, fire: 'yes', dash: false }, { move: 1, fire: true }, { move: 1, fire: true, dash: false, x: 1 }]) {
+    assert.throws(() => room.act('a', bad), /not an Action/, JSON.stringify(bad));
+  }
+  assert.throws(() => room.act('b', IDLE), /watching/, 'the extra player in a wingman room watches');
+  const [first] = room.actionsFor();
+  assert.equal(first.dash, true, 'the dash goes out on the next tick');
+  assert.deepEqual(room.inputs[0], { move: 3, fire: true, dash: false }, 'and only that tick');
+  room._tick();
+  room.match.pilots[0].dashCd = 5;
+  assert.throws(() => room.act('a', { move: 0, fire: false, dash: true }), /not legal now/);
+  room.close();
+});
+
+test('an AI seat acts every tick: one legal Action each tick, and its kite flies', async (t) => {
+  const room = makeRoom({ id: 'r-ai' });
+  room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A' });
+  room.setType('a', 'watch', 'easy');
+  room.start('a');
+  await playing(room);
+  stop(room);
+  const seen = [];
+  const real = room.actionsFor.bind(room);
+  t.mock.method(room, 'actionsFor', () => { const acts = real(); seen.push(acts); return acts; });
+  const x0 = room.match.pilots.map((p) => p.x);
+  for (let i = 0; i < 120; i++) room._tick();
+  assert.equal(seen.length, 120);
+  for (const acts of seen) {
+    assert.equal(acts.length, 2);
+    for (const a of acts) assert.ok(isAction(a), JSON.stringify(a));
+  }
+  assert.ok(seen.every((acts) => acts.every((a) => a.fire)), 'the pilot fires every tick');
+  assert.ok(room.match.pilots.some((p, i) => p.x !== x0[i]), 'an AI kite moved');
+  assert.equal(room.match.tick, 120);
+  room.close();
+});
+
+test('snapshots are what a seat observes, rounded, and far under the 16 KB socket cap', async () => {
+  const room = makeRoom({ id: 'r-snap' });
   const c = fakeClient();
-  room.join(c.ws, { pid: 'u1', user: { id: 42, username: 'ace' }, name: 'ace', guestId: null });
-  assert.equal(room.sim.players.get('u1').user?.id, 42);
-  const g = fakeClient();
-  room.join(g.ws, { pid: 'g1', user: null, name: 'guest', guestId: null });
-  assert.equal(room.sim.players.get('g1').user, null);
+  room.join(c.ws, { pid: 'a', user: null, name: 'A' });
+  room.setType('a', 'rival', 'easy');
+  room.start('a');
+  await playing(room);
+  stop(room);
+  for (let i = 0; i < 300; i++) room._tick();
+  const snaps = c.sent.filter((m) => m.t === 'snap');
+  assert.equal(snaps.length, 300);
+  const last = snaps.at(-1).s;
+  assert.equal(last.self.seat, 0);
+  assert.deepEqual(last.others.map((p) => p.seat), [1]);
+  assert.equal(last.stageCount, 1);
+  assert.ok(Math.max(...snaps.map((m) => JSON.stringify(m).length)) < 16 * 1024);
+  room.close();
 });
 
-test('resume() requires the client-private resumeToken, not the (broadcast, guessable) pid', () => {
-  const room = new Room({ id: 'r5', name: 'Resume', seed: 's' });
+test('resume() requires the client-private resumeToken, and the resumed player gets the match again', async () => {
+  const room = makeRoom({ id: 'r5' });
   const host = fakeClient();
   room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
   assert.equal(room.start('host'), true);
-  const joinedMsg = host.sent.find((m) => m.t === 'joined');
-  const { resumeToken } = joinedMsg;
+  await playing(room);
+  const { resumeToken } = host.sent.find((m) => m.t === 'joined');
   assert.ok(resumeToken && resumeToken.length >= 16, 'a private resume token is issued on join');
 
   room.disconnect('host');
   assert.equal(room.clients.get('host').away, true);
+  assert.deepEqual(room.actionsFor()[0], IDLE, 'an away seat idles');
 
-  // Guessing the token as the pid itself (what the old, vulnerable protocol used) must fail.
+  // Guessing the token as the pid itself must fail.
   assert.equal(room.resume({ readyState: 1, send: () => {} }, 'host', 'host'), null);
   assert.equal(room.clients.get('host').away, true, 'a wrong token must not resume the slot');
 
-  // The real token succeeds.
-  const resumed = room.resume({ readyState: 1, send: () => {} }, 'host', resumeToken);
-  assert.deepEqual(resumed, { pid: 'host' });
+  const back = fakeClient();
+  assert.deepEqual(room.resume(back.ws, 'host', resumeToken), { pid: 'host' });
   assert.equal(room.clients.get('host').away, false);
-  clearInterval(room.tickTimer);
+  assert.ok(back.sent.some((m) => m.t === 'start' && m.stages.length === 1), 'the stages come again');
+  room.close();
 });
 
-test('rejoining with the same pid clears a stale awayTimer instead of leaking it', () => {
-  const room = new Room({ id: 'r6', name: 'Rejoin', seed: 's' });
+test('rejoining with the same pid clears a stale awayTimer instead of leaking it', async () => {
+  const room = makeRoom({ id: 'r6' });
   const host = fakeClient();
   room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
-  assert.equal(room.start('host'), true);
-
+  room.start('host');
   room.disconnect('host');
   const staleTimer = room.clients.get('host').awayTimer;
   assert.ok(staleTimer, 'disconnect schedules an awayTimer');
-
   room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
   assert.equal(staleTimer._destroyed, true, 'the old awayTimer must be cleared on rejoin');
   assert.equal(room.clients.get('host').awayTimer, null);
-  clearInterval(room.tickTimer);
-});
-
-test('slot assignment does not collide when the original slot-1 player leaves and a new one joins', () => {
-  const room = new Room({ id: 'r7', name: 'Slots', seed: 's' });
-  const p1 = fakeClient(); const p2 = fakeClient(); const p3 = fakeClient();
-  room.join(p1.ws, { pid: 'p1', user: null, name: 'p1', guestId: null });
-  room.join(p2.ws, { pid: 'p2', user: null, name: 'p2', guestId: null });
-  assert.equal(room.sim.players.get('p1').slot, 1);
-  assert.equal(room.sim.players.get('p2').slot, 2);
-
-  room.leave('p1'); // slot 1 is now free; clients.size alone would mislead the next join
-  room.join(p3.ws, { pid: 'p3', user: null, name: 'p3', guestId: null });
-  assert.equal(room.sim.players.get('p3').slot, 1, 'the new player takes the now-free slot 1');
-  assert.notEqual(
-    room.sim.players.get('p3').slot, room.sim.players.get('p2').slot,
-    'must not collide with the still-present slot-2 player',
-  );
+  room.close();
 });
 
 test('a client-supplied guestId is capped and sanitized', () => {
-  const room = new Room({ id: 'r8', name: 'GuestId', seed: 's' });
-  const evil = fakeClient();
+  const room = makeRoom({ id: 'r8' });
   const huge = 'a'.repeat(500) + '<script>';
-  const r1 = room.join(evil.ws, { pid: 'evil', user: null, name: 'x', guestId: huge });
+  const r1 = room.join(fakeClient().ws, { pid: 'evil', user: null, name: 'x', guestId: huge });
   assert.ok(r1.guestId.length <= 64, 'guestId must be capped in length');
   assert.doesNotMatch(r1.guestId, /[^A-Za-z0-9_-]/, 'guestId must only contain safe characters');
+  room.close();
 });
 
 test('a non-string guestId is not trusted as-is', () => {
-  const room = new Room({ id: 'r9', name: 'GuestId2', seed: 's' });
-  const weird = fakeClient();
-  const r = room.join(weird.ws, { pid: 'weird', user: null, name: 'x', guestId: { toString: () => 'nope' } });
+  const room = makeRoom({ id: 'r9' });
+  const r = room.join(fakeClient().ws, { pid: 'weird', user: null, name: 'x', guestId: { toString: () => 'nope' } });
   assert.notEqual(r.guestId, undefined);
   assert.doesNotMatch(String(r.guestId), /[^A-Za-z0-9_-]/, 'a non-string guestId must not be trusted as-is');
+  room.close();
 });
 
 test('guestId is ignored entirely for a logged-in user', () => {
-  const room = new Room({ id: 'r10', name: 'GuestId3', seed: 's' });
-  const loggedIn = fakeClient();
-  const r = room.join(loggedIn.ws, { pid: 'acct', user: { id: 1, username: 'ace' }, name: 'ace', guestId: 'sneaky-override' });
+  const room = makeRoom({ id: 'r10' });
+  const r = room.join(fakeClient().ws, { pid: 'acct', user: { id: 1, username: 'ace' }, name: 'ace', guestId: 'sneaky-override' });
   assert.equal(r.guestId, null, 'guestId must be ignored entirely for a logged-in user');
+  room.close();
 });
 
-test('onStart fires for an explicit host start', () => {
+test('onStart fires once the match is flying after an explicit host start', async () => {
   let fired = 0;
-  const room = new Room({ id: 'r11', name: 'OnStartExplicit', seed: 's', onStart: () => { fired++; } });
-  const host = fakeClient();
-  room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
+  const room = makeRoom({ id: 'r11', onStart: () => { fired++; } });
+  room.join(fakeClient().ws, { pid: 'host', user: null, name: 'x', guestId: null });
   assert.equal(room.start('host'), true);
+  assert.equal(fired, 0, 'not while the stages are still building');
+  await playing(room);
   assert.equal(fired, 1);
-  clearInterval(room.tickTimer);
+  room.close();
 });
 
-test('onStart also fires for the ready-countdown auto-start, not just an explicit start message', (t) => {
+test('onStart also fires for the ready-countdown auto-start, not just an explicit start message', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   let fired = 0;
-  const room = new Room({ id: 'r12', name: 'OnStartAuto', seed: 's', onStart: () => { fired++; } });
-  const host = fakeClient();
-  room.join(host.ws, { pid: 'host', user: null, name: 'x', guestId: null });
+  const room = makeRoom({ id: 'r12', onStart: () => { fired++; } });
+  room.join(fakeClient().ws, { pid: 'host', user: null, name: 'x', guestId: null });
   room.setReady('host', true); // solo player ready -> countdown starts
-  assert.equal(fired, 0, 'must not fire before the countdown elapses');
-  t.mock.timers.tick(5000); // COUNTDOWN_SECONDS
+  t.mock.timers.tick(4000);
+  assert.equal(room.state, 'lobby', 'must not start before the countdown elapses');
+  t.mock.timers.tick(1000); // COUNTDOWN_SECONDS
+  await playing(room);
   assert.equal(fired, 1, 'must fire once the auto-start countdown elapses');
-  assert.equal(room.state, 'playing');
-  clearInterval(room.tickTimer);
+  room.close();
 });
 
-test('room info marks the host and carries each player pid so the client can gate the Start button', () => {
-  const room = new Room({ id: 'r-host', name: 'Host', seed: 's' });
+test('room info marks the host, the match type and each player pid so the client can gate Start', () => {
+  const room = makeRoom({ id: 'r-host' });
   room.join(fakeClient().ws, { pid: 'a', user: null, name: 'A', guestId: null });
   room.join(fakeClient().ws, { pid: 'b', user: null, name: 'B', guestId: null });
   assert.deepEqual(room.info().players.map((p) => [p.pid, p.host]), [['a', true], ['b', false]]);
+  assert.deepEqual([room.info().type, room.info().level], ['coop', 'medium']);
+  room.close();
 });
 
-test('an arcade continue after game over resumes the same room on the same stage, limited to 3 credits', () => {
-  const room = new Room({ id: 'r-cont', name: 'Cont', seed: 's' });
+// The kites are lost: every pilot out, on the stage the match is on.
+function loseOn(room, stageIndex) {
+  room.match.stageIndex = stageIndex;
+  for (const p of room.match.pilots) Object.assign(p, { alive: false, lives: 0 });
+  room.match.phase = 'over';
+  room._tick();
+}
+
+test('a continue after the kites are lost flies on from the same stage with the score banked, three times', async () => {
+  const room = makeRoom({ id: 'r-cont', stageCount: 2 });
   const c = fakeClient();
   room.join(c.ws, { pid: 'p', user: null, name: 'P', guestId: null });
   assert.equal(room.continueGame('p'), false, 'no continue before the game is even over');
-  assert.equal(room.start('p'), true);
-  const player = room.sim.players.get('p');
-  const runOut = () => { player.lives = 1; room.sim._killPlayer(player); room._tick(); };
-  runOut();
+  room.start('p');
+  await playing(room);
+  stop(room);
+  room.match.pilots[0].score = 700;
+  loseOn(room, 1);
   assert.equal(room.state, 'over');
   const over = c.sent.filter((m) => m.t === 'gameover').at(-1);
-  assert.equal(over.reason, 'gameover');
-  assert.equal(over.continuesLeft, 3);
-  const stage = room.sim.stageNumber;
+  assert.deepEqual([over.result, over.stage, over.scores, over.continuesLeft], ['over', 2, [700], 3]);
 
-  assert.equal(room.continueGame('nobody'), false, 'only a player in the room can insert a coin');
+  assert.equal(room.continueGame('nobody'), false, 'only a player in the room can continue');
   assert.equal(room.continueGame('p'), true);
+  stop(room);
   assert.equal(room.state, 'playing');
-  assert.equal(room.sim.stageNumber, stage, 'the stage is kept');
-  assert.equal(player.lives, 3);
-  const cont = c.sent.filter((m) => m.t === 'continued').at(-1);
-  assert.equal(cont.continuesLeft, 2);
+  assert.equal(room.match.stages.length, 1, 'the new match starts on the stage where they fell');
+  assert.equal(room.snapshot(0).stage, 1, 'and counts it as stage 2 of 2');
+  assert.equal(room.snapshot(0).self.score, 700, 'the score is banked');
+  assert.equal(c.sent.filter((m) => m.t === 'continued').at(-1).continuesLeft, 2);
   assert.equal(room.continueGame('p'), false, 'cannot continue while playing');
 
-  runOut(); assert.equal(room.continueGame('p'), true);
-  runOut(); assert.equal(room.continueGame('p'), true);
-  runOut();
+  loseOn(room, 0); assert.equal(room.continueGame('p'), true); stop(room);
+  loseOn(room, 0); assert.equal(room.continueGame('p'), true); stop(room);
+  loseOn(room, 0);
   assert.equal(c.sent.filter((m) => m.t === 'gameover').at(-1).continuesLeft, 0);
   assert.equal(room.continueGame('p'), false, 'no fourth credit');
   assert.ok(c.sent.some((m) => m.t === 'error' && /continues/i.test(m.error)));
-  clearInterval(room.tickTimer);
+  room.close();
 });
 
-test('a victory cannot be continued', () => {
-  const room = new Room({ id: 'r-vic', name: 'Vic', seed: 's' });
+test('a won match cannot be continued', async () => {
+  const room = makeRoom({ id: 'r-vic' });
   const c = fakeClient();
   room.join(c.ws, { pid: 'p', user: null, name: 'P', guestId: null });
   room.start('p');
-  room.debugAction('win-game'); room._tick();
+  await playing(room);
+  stop(room);
+  room.match.phase = 'won';
+  room._tick();
   assert.equal(room.state, 'over');
   assert.equal(c.sent.filter((m) => m.t === 'gameover').at(-1).continuesLeft, 0);
   assert.equal(room.continueGame('p'), false);
+  room.close();
 });
 
-test('a run that scored nothing (e.g. a wasted continue) is not recorded as a leaderboard row', () => {
-  const room = new Room({ id: 'r-zero', name: 'Zero', seed: 's' });
-  const c = fakeClient();
-  room.join(c.ws, { pid: 'p', user: { id: 4242, username: 'zero' }, name: 'zero', guestId: null });
+test('a run that scored nothing is not recorded as a leaderboard row', async () => {
+  const room = makeRoom({ id: 'r-zero' });
+  room.join(fakeClient().ws, { pid: 'p', user: { id: 4242, username: 'zero' }, name: 'zero', guestId: null });
   room.start('p');
-  const player = room.sim.players.get('p');
+  await playing(room);
+  stop(room);
   const runsFor = () => db.prepare('SELECT COUNT(*) AS n FROM runs WHERE user_id = 4242').get().n;
-  player.lives = 1; room.sim._killPlayer(player); room._tick();
-  assert.equal(room.state, 'over');
+  loseOn(room, 0);
   assert.equal(runsFor(), 0, 'zero score, zero kills: nothing worth recording');
   room.continueGame('p');
-  player.score = 300; player.kills = 1;
-  player.lives = 1; room.sim._killPlayer(player); room._tick();
+  stop(room);
+  Object.assign(room.match.pilots[0], { score: 300, kills: 1 });
+  loseOn(room, 0);
   assert.equal(runsFor(), 1, 'a credit that scored is recorded');
-  clearInterval(room.tickTimer);
+  room.close();
+});
+
+test('engine events feed the stats: kills by seat, and an untouched stage clear', async () => {
+  const room = makeRoom({ id: 'r-stats' });
+  room.join(fakeClient().ws, { pid: 'p', user: { id: 77, username: 'stat' }, name: 'stat', guestId: null });
+  room.setType('p', 'wingman');
+  room.start('p');
+  await playing(room);
+  stop(room);
+  room._onEvents([{ t: 'kill', seat: 0, kind: 'heavy' }, { t: 'kill', seat: 1, kind: 'drone' }, { t: 'stage-clear', stage: 0 }]);
+  const stat = (k) => db.prepare('SELECT value FROM stats WHERE user_id = 77 AND key = ?').get(k)?.value;
+  assert.deepEqual([stat('kills'), stat('thunderheads'), stat('untouched_stages'), stat('coop_stage_clears'), stat('deepest_stage')], [1, 1, 1, 1, 1],
+    'the AI seat\'s kill is not the player\'s');
+  room._onEvents([{ t: 'death', seat: 0 }, { t: 'stage-clear', stage: 0 }]);
+  assert.equal(stat('untouched_stages'), 1, 'a hit stage is not untouched');
+  room.close();
 });
 
 test('the public room list omits per-player ids and the host flag; in-room info keeps them', () => {

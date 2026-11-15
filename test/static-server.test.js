@@ -73,13 +73,14 @@ test('POST body over the size cap is rejected', async (t) => {
   }
 });
 
-test('static server serves the new game at /next/ with its modules', async (t) => {
+test('static server serves Stormglass as the main page, with its modules', async (t) => {
   const server = await startServer();
   t.after(() => server.stop());
-  const page = await fetch(server.baseUrl + '/next/');
+  const page = await fetch(server.baseUrl + '/');
   assert.equal(page.status, 200);
   assert.match(await page.text(), /<title>Stormglass<\/title>/);
-  for (const p of ['/next/main.js', '/next/render.js', '/shared/ai/builder.js']) {
+  for (const p of ['/main.js', '/online.js', '/render.js', '/stormglass.css', '/shared/ai/builder.js']) {
     assert.equal((await fetch(server.baseUrl + p)).status, 200, p);
   }
+  assert.equal((await fetch(server.baseUrl + '/next/')).status, 404, 'the preview path is gone');
 });

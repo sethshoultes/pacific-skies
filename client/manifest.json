@@ -1,7 +1,7 @@
 {
   "name": "Pacific Skies",
   "short_name": "Pacific Skies",
-  "description": "A 1942-inspired vertical-scrolling arcade shooter with online co-op.",
+  "description": "Stormglass: weather-courier kites fly sealed storms through a sky of glass towers, solo, online or with an AI.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

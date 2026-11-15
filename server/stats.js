@@ -59,7 +59,7 @@ export function recordRun(userId, run) {
 export function leaderboard(limit = 20) {
   return {
     scores: db.prepare(`SELECT u.username, r.score, r.stage_reached, r.kills, r.mode, r.ended_at FROM runs r JOIN users u ON u.id = r.user_id ORDER BY r.score DESC LIMIT ?`).all(limit),
-    deepest: db.prepare(`SELECT u.username, MAX(s.value) AS deepest FROM stats s JOIN users u ON u.id = s.user_id WHERE s.key = 'deepest_stage_reached' GROUP BY u.id ORDER BY deepest DESC LIMIT ?`).all(limit),
+    deepest: db.prepare(`SELECT u.username, MAX(s.value) AS deepest FROM stats s JOIN users u ON u.id = s.user_id WHERE s.key = 'deepest_stage' GROUP BY u.id ORDER BY deepest DESC LIMIT ?`).all(limit),
     kills: db.prepare(`SELECT u.username, s.value AS kills FROM stats s JOIN users u ON u.id = s.user_id WHERE s.key = 'kills' ORDER BY s.value DESC LIMIT ?`).all(limit),
     achievements: db.prepare(`SELECT u.username, COUNT(*) AS n FROM achievements a JOIN users u ON u.id = a.user_id GROUP BY u.id ORDER BY n DESC LIMIT ?`).all(limit),
   };

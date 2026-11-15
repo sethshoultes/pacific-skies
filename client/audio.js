@@ -1,72 +1,77 @@
-// WebAudio synth: every sound is generated at runtime (square/triangle/noise voices), no audio
-// assets are shipped. Small master/SFX volume mixer persisted to localStorage, `M` mutes.
-const VOL_KEYS = { master: 'ps_vol_master', sfx: 'ps_vol_sfx' };
-function readVol(key) { try { const v = localStorage.getItem(key); const n = v == null ? 100 : Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) / 100 : 1; } catch { return 1; } }
-function readMuted() { try { return localStorage.getItem('ps_mute') === '1'; } catch { return false; } }
+// Stormglass sounds, all synthesised: glassy sine chimes, filtered-noise thunder, a rising gust.
+// Silent until the first key or touch (browsers want a gesture), and the mute choice is remembered.
+const MUTE_KEY = 'stormglass.mute';
 
-const vol = { master: readVol(VOL_KEYS.master), sfx: readVol(VOL_KEYS.sfx) };
-let muted = readMuted();
-let AC = null, masterGain = null, sfxBus = null;
+let ctx = null;
+let out = null;
+let muted = (() => { try { return localStorage.getItem(MUTE_KEY) === '1'; } catch { return false; } })();
 
-function build() {
-  if (AC) return AC;
-  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
-  masterGain = AC.createGain(); masterGain.gain.value = vol.master; masterGain.connect(AC.destination);
-  sfxBus = AC.createGain(); sfxBus.gain.value = vol.sfx; sfxBus.connect(masterGain);
-  return AC;
+export const isMuted = () => muted;
+export function setMuted(v) {
+  muted = !!v;
+  try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch { /* private mode: not remembered */ }
 }
-function ac() { return build(); }
 
-export function initAudio() {
-  const resume = () => { const a = build(); if (a && a.state === 'suspended') a.resume(); };
-  window.addEventListener('pointerdown', resume, { once: true });
-  window.addEventListener('keydown', resume, { once: true });
+// The master volume from the settings page, 0..1.
+function masterVolume() {
+  try { const v = Number(localStorage.getItem('ps_vol_master') ?? 100); return Number.isFinite(v) ? Math.max(0, Math.min(1, v / 100)) : 1; } catch { return 1; }
 }
-export function setMuted(v) { muted = !!v; try { localStorage.setItem('ps_mute', muted ? '1' : '0'); } catch {} }
-export function isMuted() { return muted; }
 
-function tone(freq, dur, type = 'square', gain = 0.08, slide = 0) {
-  const a = ac(); if (!a || muted) return;
-  const o = a.createOscillator(); const g = a.createGain();
-  o.type = type; o.frequency.setValueAtTime(freq, a.currentTime);
-  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), a.currentTime + dur);
-  g.gain.setValueAtTime(gain, a.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
-  o.connect(g).connect(sfxBus || a.destination); o.start(); o.stop(a.currentTime + dur);
+/** Open the audio graph on the first gesture; before that every sound is a no-op. */
+export function armAudio() {
+  const open = () => {
+    if (!ctx) {
+      try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+      out = ctx.createGain(); out.gain.value = 0.5 * masterVolume(); out.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+  };
+  window.addEventListener('pointerdown', open, { once: true });
+  window.addEventListener('keydown', open, { once: true });
 }
-function noise(dur, gain = 0.08, filter) {
-  const a = ac(); if (!a || muted) return;
-  const buf = a.createBuffer(1, Math.max(1, Math.floor(a.sampleRate * dur)), a.sampleRate);
+
+function chime(freq, dur, gain = 0.06, at = 0, type = 'sine') {
+  if (!ctx || muted) return;
+  const t = ctx.currentTime + at;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(out); o.start(t); o.stop(t + dur + 0.02);
+}
+
+function rumble(dur, gain, from, to) {
+  if (!ctx || muted) return;
+  const t = ctx.currentTime;
+  const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
   const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
-  const s = a.createBufferSource(); s.buffer = buf;
-  const g = a.createGain(); g.gain.value = gain;
-  let node = s;
-  if (filter) { const f = a.createBiquadFilter(); f.type = filter; f.frequency.value = 800; node.connect(f); node = f; }
-  node.connect(g).connect(sfxBus || a.destination);
-  s.start();
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+  f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + dur);
+  const g = ctx.createGain(); g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(out); src.start(t);
 }
-function chord(freqs, dur, type, gain, gap = 0) { freqs.forEach((f, i) => setTimeout(() => tone(f, dur, type, gain), i * gap)); }
 
-const sfxLast = {};
-export function sfx(name) {
-  const now = performance.now();
-  if (sfxLast[name] && now - sfxLast[name] < 40) return;
-  sfxLast[name] = now;
-  switch (name) {
-    case 'shoot': tone(900, 0.05, 'square', 0.035, -500); break;
-    case 'hit': noise(0.04, 0.05); break;
-    case 'kill': tone(220, 0.12, 'sawtooth', 0.06, -150); noise(0.08, 0.04); break;
-    case 'explosion': noise(0.35, 0.13); tone(70, 0.32, 'sawtooth', 0.1, -50); break;
-    case 'loop': tone(440, 0.3, 'sine', 0.06, 600); break;
-    case 'pow': tone(660, 0.08, 'triangle', 0.07); setTimeout(() => tone(880, 0.1, 'triangle', 0.07), 70); setTimeout(() => tone(1100, 0.12, 'triangle', 0.07), 140); break;
-    case 'bomb': noise(0.5, 0.16); tone(60, 0.5, 'sawtooth', 0.12, -30); break;
-    case '1up': chord([659, 784, 988, 1319], 0.2, 'square', 0.08, 100); break;
-    case 'death': tone(440, 0.7, 'sawtooth', 0.1, -400); break;
-    case 'boss-alarm': tone(300, 0.4, 'square', 0.08, -80); setTimeout(() => tone(300, 0.4, 'square', 0.08, -80), 500); break;
-    case 'stage-clear': chord([523, 659, 784, 1047, 1319], 0.2, 'square', 0.07, 130); break;
-    case 'gameover': chord([440, 349, 293, 220], 0.4, 'sawtooth', 0.08, 220); break;
-    case 'victory': chord([523, 659, 784, 1047, 1319, 1568, 2093], 0.22, 'square', 0.08, 120); break;
-    case 'coin': tone(988, 0.08, 'square', 0.06); setTimeout(() => tone(1319, 0.15, 'square', 0.06), 80); break;
-    default: break;
-  }
+const SOUNDS = {
+  shot: () => chime(1560, 0.05, 0.015, 0, 'triangle'),
+  hit: () => chime(2200, 0.04, 0.02),
+  kill: () => { chime(880, 0.18, 0.05); chime(1320, 0.22, 0.035, 0.03); },
+  'boss-down': () => { rumble(1.2, 0.3, 900, 60); [523, 784, 1047, 1568].forEach((f, i) => chime(f, 0.6, 0.05, 0.15 * i)); },
+  death: () => { rumble(0.7, 0.25, 1800, 80); chime(330, 0.5, 0.05, 0, 'triangle'); },
+  dash: () => rumble(0.25, 0.12, 400, 3200),
+  pickup: () => [988, 1319, 1760].forEach((f, i) => chime(f, 0.2, 0.04, 0.05 * i)),
+  'boss-appear': () => { rumble(1.6, 0.28, 300, 40); chime(110, 1.2, 0.05, 0.2, 'triangle'); },
+  'stage-clear': () => [659, 880, 988, 1319].forEach((f, i) => chime(f, 0.5, 0.05, 0.12 * i)),
+  'match-over': () => [440, 392, 330, 262].forEach((f, i) => chime(f, 0.7, 0.05, 0.2 * i, 'triangle')),
+};
+
+const last = {};
+
+/** Play the sound for an engine event, if it has one; one of a kind per 60 ms, so volleys don't pile up. */
+export function playEvent(e) {
+  if (!ctx || muted || !SOUNDS[e.t]) return;
+  if (ctx.currentTime - (last[e.t] ?? -1) < 0.06) return;
+  last[e.t] = ctx.currentTime;
+  SOUNDS[e.t]();
 }

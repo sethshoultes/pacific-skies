@@ -1,25 +1,19 @@
 #!/usr/bin/env node
-// Fuller end-to-end pass: two browsers join the SAME room for co-op, force a stage clear via the
-// SKIES_DEBUG=1 debug hook (a lightweight helper WebSocket, not one of the two player slots),
-// see the tally screen and the next stage begin -- plus a check of the dashboard and settings
-// pages. Not a node:test file, run via `npm run e2e`.
+// Fuller end-to-end pass: two browsers join the SAME room for co-op, the host picks the match
+// type, both ready up and fly, one reloads mid-match and resumes its seat, and both see the other's
+// kite; plus a check of the dashboard and settings pages. Not a node:test file, run via `npm run e2e`.
 //
-// Set E2E_BASE_URL to point the whole sweep at an already-running server (e.g. the live
-// production site) instead of spawning one locally, e.g.:
-//   E2E_BASE_URL=https://skies.adventurebuildr.com npm run e2e
-// When set, no local server is started; the debug-hook WebSocket is derived from the base URL
-// (http -> ws, https -> wss). Note: the debug hook only responds if the target server itself was
-// started with SKIES_DEBUG=1 -- against a production server without that flag, the stage-clear
-// step will time out and the sweep will fail, which is the expected (and safe) outcome.
+// Set E2E_BASE_URL to point the whole sweep at an already-running server (e.g. the live site)
+// instead of spawning one locally. Set E2E_SHOTS to a directory to save screenshots of the room
+// lobby and the co-op match at 390 and 1280 wide (skies-s3-{lobby,coop}-{390,1280}.png).
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import WebSocket from 'ws';
 import { stubAnalytics } from './stub-analytics.mjs';
 
 function log(msg) { console.log(`[e2e] ${msg}`); }
@@ -74,19 +68,31 @@ async function main() {
     dataDir = await mkdtemp(path.join(tmpdir(), 'pacific-skies-e2e-'));
     const port = await findFreePort();
     baseUrl = `http://127.0.0.1:${port}`;
-    log(`starting server on ${baseUrl} (SKIES_DEBUG=1)`);
+    log(`starting server on ${baseUrl}`);
     server = spawn(process.execPath, ['--no-warnings=ExperimentalWarning', 'server/index.js'], {
       cwd: root,
-      env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, SKIES_DEBUG: '1' },
+      env: { ...process.env, PORT: String(port), DATA_DIR: dataDir },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     server.stdout.on('data', (d) => { serverOutput += d.toString(); });
     server.stderr.on('data', (d) => { serverOutput += d.toString(); });
     serverExit = once(server, 'exit');
   }
-  const wsBase = baseUrl.replace(/^http/, 'ws');
+  const shots = process.env.E2E_SHOTS || null;
+  const WIDTHS = [[390, 844], [1280, 800]];
+  async function shoot(page, name) {
+    if (!shots) return;
+    for (const [width, height] of WIDTHS) {
+      await page.setViewportSize({ width, height });
+      await page.waitForTimeout(400);
+      const file = path.join(shots, `skies-s3-${name}-${width}.png`);
+      await page.screenshot({ path: file });
+      if (!(await stat(file)).size) throw new Error(`empty screenshot ${file}`);
+      log(`saved ${file}`);
+    }
+  }
 
-  let browserA = null, browserB = null, helperWs = null;
+  let browserA = null, browserB = null;
   let failed = false;
 
   try {
@@ -101,77 +107,63 @@ async function main() {
     }
     log('server is listening');
 
-    browserA = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-    stubAnalytics(browserA);
-    browserB = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-    stubAnalytics(browserB);
-    const pageA = await browserA.newPage();
-    const pageB = await browserB.newPage();
+    const launch = () => chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--mute-audio'] });
+    browserA = stubAnalytics(await launch());
+    browserB = stubAnalytics(await launch());
+    const muted = (ctx) => ctx.addInitScript(() => { try { localStorage.setItem('stormglass.mute', '1'); } catch {} });
+    const ctxA = await browserA.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctxB = await browserB.newContext({ viewport: { width: 1280, height: 800 } });
+    await muted(ctxA); await muted(ctxB);
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
     const pageErrors = [];
     for (const p of [pageA, pageB]) p.on('pageerror', (err) => pageErrors.push(String(err && err.stack || err)));
+    const shown = (page, id) => page.waitForSelector(`#${id}:not([hidden])`, { timeout: 15_000 });
+    const flying = (page) => page.waitForSelector('body[data-screen="playing"]', { timeout: 30_000 });
 
     log('player A creates a room');
     await pageA.goto(baseUrl + '/', { waitUntil: 'load' });
-    await pageA.fill('#gname', 'PilotA');
+    await pageA.fill('#callsign', 'Tinder');
     await pageA.click('#create');
-    await pageA.waitForSelector('#roomscreen.on', { timeout: 15_000 });
-    const roomId = await pageA.textContent('#rs-id').then((t) => t.replace('#', '').trim());
-    log(`room id: ${roomId}`);
+    await shown(pageA, 'room');
+    const roomId = (await pageA.textContent('#rs-id')).trim();
+    log(`room code: ${roomId}`);
 
-    log('player B joins via the invite link');
-    // The invite-link auto-join (?room=ID) fires immediately on page load using whatever name is
-    // already in #gname (empty -> "Guest"), so there is no window to fill the name field first.
-    await pageB.goto(`${baseUrl}/?room=${roomId}`, { waitUntil: 'load' });
-    await pageB.waitForSelector('#roomscreen.on', { timeout: 15_000 });
+    log('player B joins by code');
+    await pageB.goto(baseUrl + '/', { waitUntil: 'load' });
+    await pageB.fill('#callsign', 'Quill');
+    await pageB.fill('#code', roomId);
+    await pageB.click('#join');
+    await shown(pageB, 'room');
+    await pageA.waitForFunction(() => document.querySelectorAll('#rs-roster li').length === 2, null, { timeout: 10_000 });
 
-    log('both players ready up, host starts');
+    log('the host picks the match type; the guest sees it and cannot change it');
+    await pageA.selectOption('#rs-type', 'race');
+    await pageB.waitForFunction(() => document.querySelector('#rs-type').value === 'race', null, { timeout: 10_000 });
+    if (!(await pageB.isDisabled('#rs-type'))) throw new Error('the guest can change the match type');
+    await pageA.selectOption('#rs-type', 'coop');
+    await pageB.waitForFunction(() => document.querySelector('#rs-type').value === 'coop', null, { timeout: 10_000 });
+    await shoot(pageA, 'lobby');
+
+    log('both players ready up, the countdown starts the match');
     await pageB.click('#rs-ready');
     await pageA.click('#rs-ready');
-    await pageA.click('#rs-start').catch(() => {});
-    await pageA.waitForSelector('#game.on', { timeout: 15_000 });
-    await pageB.waitForSelector('#game.on', { timeout: 15_000 });
-    log('both players are in the live game -- co-op confirmed');
+    await Promise.all([flying(pageA), flying(pageB)]);
+    log('both players are flying -- co-op confirmed');
+    await pageA.keyboard.down('Space');
+    await pageB.keyboard.down('Space');
+    await pageB.keyboard.down('a');
+    await pageA.waitForTimeout(1500);
 
-    log('player B refreshes mid-game -- must resume the same slot, not be rejected or relobbied');
-    const stageAtReload = await pageB.textContent('#hud-stage');
+    log('player B reloads mid-match -- must resume the same seat');
     await pageB.goto(`${baseUrl}/?room=${roomId}`, { waitUntil: 'load' });
-    // A successful resume goes straight to the live view (see client/game.js's 'joined' handler);
-    // if resume were broken, this would either land back on #roomscreen or show an error toast.
-    await pageB.waitForSelector('#game.on', { timeout: 15_000 });
-    const roomScreenVisible = await pageB.evaluate(() => document.querySelector('#roomscreen')?.classList.contains('on'));
-    if (roomScreenVisible) throw new Error('player B landed back on the lobby screen instead of resuming the live game');
-    // Snapshots must still be flowing to the resumed connection -- the stage HUD should update to
-    // (at least) whatever it was before the reload, confirming this isn't a frozen/stale view.
-    await pageB.waitForFunction((before) => {
-      const el = document.querySelector('#hud-stage');
-      return el && el.textContent && el.textContent !== '';
-    }, stageAtReload, { timeout: 10_000 });
-    log('player B resumed the live game via the stored resume token -- reconnect confirmed');
+    await flying(pageB);
+    await pageB.keyboard.down('Space');
+    await pageB.waitForTimeout(1500);
+    log('player B resumed the live match via the stored resume token');
 
-    const stageBefore = await pageA.textContent('#hud-stage');
-    log(`stage before forced clear: ${stageBefore}`);
-
-    log('attaching a helper socket to force a stage clear via the debug hook');
-    helperWs = new WebSocket(`${wsBase}/ws`);
-    await once(helperWs, 'open');
-    helperWs.send(JSON.stringify({ t: 'debug', roomId, action: 'clear-stage' }));
-
-    log('waiting for the stage-clear tally overlay');
-    await pageA.waitForFunction(() => {
-      const el = document.querySelector('#game .overlay h2');
-      return el && /STAGE .* CLEAR/.test(el.textContent);
-    }, { timeout: 10_000 });
-    await pageB.waitForFunction(() => {
-      const el = document.querySelector('#game .overlay h2');
-      return el && /STAGE .* CLEAR/.test(el.textContent);
-    }, { timeout: 10_000 });
-    log('tally screen confirmed on both browsers');
-
-    log('waiting for the next stage to begin');
-    await pageA.waitForFunction((before) => document.querySelector('#hud-stage')?.textContent !== before, stageBefore, { timeout: 15_000 });
-    const stageAfter = await pageA.textContent('#hud-stage');
-    if (Number(stageAfter) !== Number(stageBefore) - 1) throw new Error(`expected stage ${Number(stageBefore) - 1}, got ${stageAfter}`);
-    log(`advanced to stage ${stageAfter}`);
+    await shoot(pageA, 'coop');
+    await pageA.keyboard.up('Space');
 
     if (pageErrors.length) throw new Error(`page errors:\n${pageErrors.join('\n')}`);
 
@@ -181,13 +173,12 @@ async function main() {
     await pageA.goto(baseUrl + '/settings.html', { waitUntil: 'load' });
     await pageA.waitForSelector('#s-master', { timeout: 10_000 });
 
-    log('E2E PASS: co-op join/ready/start, forced stage clear + tally + stage advance, dashboard/settings all OK');
+    log('E2E PASS: co-op create/join/type/ready, resume mid-match, dashboard/settings all OK');
   } catch (err) {
     failed = true;
     console.error('[e2e] FAILED:', err && err.stack || err);
     if (serverOutput) console.error('[e2e] server output:\n' + serverOutput);
   } finally {
-    if (helperWs) try { helperWs.close(); } catch {}
     if (browserA) await browserA.close().catch(() => {});
     if (browserB) await browserB.close().catch(() => {});
     if (server) await stopServer(server, serverExit);

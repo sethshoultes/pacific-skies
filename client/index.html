@@ -3,77 +3,91 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Pacific Skies</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 fill=%27%231b3a5c%27/%3E%3Cpath d=%27M7 1h2v5l6 3v2l-6-1v3l2 1v1H5v-1l2-1V10L1 11V9l6-3z%27 fill=%27%23e8e0c0%27/%3E%3C/svg%3E" />
-<meta name="theme-color" content="#06090f" />
+<title>Stormglass</title>
+<meta name="theme-color" content="#171a36" />
+<link rel="icon" href="/icon.svg" type="image/svg+xml" />
 <link rel="manifest" href="/manifest.json" />
-<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/stormglass.css" />
 </head>
-<body>
-<nav class="top"></nav>
-<main>
-  <div id="stage">
+<body data-screen="title">
+<canvas id="sky" aria-label="Stormglass: the sky and the kites"></canvas>
 
-    <section id="title" class="screen on">
-      <h1>PACIFIC SKIES</h1>
-      <div class="sub">A tribute to the 1984 arcade vertical scroller genre</div>
-      <canvas id="attract" width="384" height="360"></canvas>
-      <div class="sub blink" id="coin-prompt">PRESS START — INSERT COIN</div>
-      <div class="row">
-        <label style="margin:0">Callsign</label>
-        <input id="gname" maxlength="12" placeholder="Guest" />
-      </div>
-      <div class="row">
-        <button class="primary" id="quick">Quick Play</button>
-        <button id="create">Create Room</button>
-        <button id="join-link">Join via link</button>
-      </div>
-      <div class="sub" id="hiscore"></div>
-      <div class="sub controls-hint">WASD / arrows to fly · Space to fire · Shift or Q to loop · M to mute</div>
-    </section>
+<button id="mute" class="chip" type="button" aria-pressed="false">Sound on</button>
+<button id="dash" class="dash" type="button" aria-label="Dash">Dash</button>
+<p id="note" class="note" role="status" aria-live="polite" hidden></p>
 
-    <section id="roomscreen" class="screen">
-      <div class="panel">
-        <div class="row" style="justify-content:space-between">
-          <b id="rs-name">Room</b>
-          <span class="muted" id="rs-id"></span>
-        </div>
-        <p class="muted" style="font-size:12px">Invite link: <a id="rs-link" href="#"></a></p>
-        <div id="rs-roster"></div>
-        <div class="row" style="margin-top:12px;justify-content:space-between">
-          <button id="rs-ready">Ready</button>
-          <span id="rs-countdown" class="muted"></span>
-          <button class="primary" id="rs-start">Start</button>
-        </div>
-        <p id="rs-hint" class="muted" style="font-size:11px;margin:6px 0 0"></p>
-        <div class="row" style="margin-top:8px">
-          <input id="rs-chat" placeholder="Say something..." style="flex:1" />
-        </div>
-        <div id="rs-chatlog" class="muted" style="font-size:11px;max-height:80px;overflow:auto;margin-top:6px"></div>
-      </div>
-    </section>
-
-    <section id="game" class="screen">
-      <div id="hud">
-        <span>STAGE <b id="hud-stage">32</b> <span id="hud-stagename" class="muted"></span></span>
-        <span class="lives">LIVES <b id="hud-lives">3</b></span>
-        <span class="loops">LOOPS <b id="hud-loops">3</b></span>
-        <span class="score">SCORE <b id="hud-score">0</b></span>
-      </div>
-      <canvas id="view" width="384" height="576"></canvas>
-      <div id="touch-controls" hidden aria-label="Touch controls">
-        <div class="tc-stick" id="tc-stick" aria-label="Joystick"><div class="tc-knob" id="tc-knob"></div></div>
-        <div class="tc-buttons">
-          <button class="tc-btn tc-loop" id="tc-loop" type="button">LOOP</button>
-          <button class="tc-btn tc-fire" id="tc-fire" type="button">FIRE</button>
-        </div>
-      </div>
-      <p class="touch-hint muted">Left pad flies · hold FIRE · tap LOOP to dodge · or drag anywhere on the sky</p>
-    </section>
-
+<section id="title" class="card">
+  <h1>Stormglass</h1>
+  <p class="lede">Weather-courier kites carry sealed storms between the glass towers of the sky.
+    Lightning drones and cloud-eating dreadnoughts want them back.</p>
+  <div class="row">
+    <button id="fly" class="primary" type="button" disabled>Fly solo</button>
+    <button id="watch" type="button" disabled>Watch the AI</button>
   </div>
-</main>
-<script type="module" src="/game.js"></script>
-  <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "f9cfc369da7741c98494fdaa0d625be7"}'></script>
+  <p id="status" class="status" aria-live="polite">Charting the storms…</p>
+
+  <div class="online">
+    <h2>Fly online</h2>
+    <label class="field"><span>Callsign</span><input id="callsign" maxlength="12" placeholder="Guest" autocomplete="nickname" /></label>
+    <div class="row">
+      <button id="quick" class="primary" type="button">Quick play</button>
+      <button id="create" type="button">Create room</button>
+    </div>
+    <form id="join-form" class="row join">
+      <input id="code" maxlength="6" placeholder="Room code" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Room code" />
+      <button id="join" type="submit">Join</button>
+    </form>
+  </div>
+
+  <p class="hint">Arrows or WASD to steer · Space to fire · Shift to dash · M for sound<br />
+    On a phone: drag anywhere to steer, it fires by itself, tap Dash to slip through</p>
+  <p class="links"><a href="/dashboard.html">Dashboard</a> · <a href="/settings.html">Settings</a></p>
+</section>
+
+<section id="room" class="card" hidden>
+  <h2 id="rs-name">Room</h2>
+  <p class="code">Room code <b id="rs-id"></b> · <a id="rs-link" href="#">copy invite link</a></p>
+  <ul id="rs-roster" class="roster"></ul>
+  <div class="pick">
+    <label class="field"><span>Match</span>
+      <select id="rs-type">
+        <option value="coop">Co-op</option>
+        <option value="race">Race</option>
+        <option value="wingman">AI wingman</option>
+        <option value="rival">AI rival</option>
+        <option value="watch">Watch AI vs AI</option>
+      </select>
+    </label>
+    <label class="field"><span>AI</span>
+      <select id="rs-level">
+        <option value="easy">Easy</option>
+        <option value="medium">Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </label>
+  </div>
+  <p id="rs-about" class="hint"></p>
+  <div class="row">
+    <button id="rs-ready" type="button">Ready</button>
+    <button id="rs-start" class="primary" type="button">Start</button>
+    <button id="rs-leave" type="button">Leave</button>
+  </div>
+  <p id="rs-countdown" class="status" aria-live="polite"></p>
+  <form id="rs-chatform" class="row"><input id="rs-chat" maxlength="200" placeholder="Say something…" aria-label="Chat" /></form>
+  <ul id="rs-chatlog" class="chatlog"></ul>
+</section>
+
+<section id="over" class="card" hidden>
+  <h2 id="over-head"></h2>
+  <p id="over-line" class="lede"></p>
+  <div class="row">
+    <button id="again" class="primary" type="button">Again</button>
+    <button id="continue" class="primary" type="button" hidden>Continue</button>
+    <button id="home" type="button">Title</button>
+  </div>
+</section>
+
+<script type="module" src="/main.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "f9cfc369da7741c98494fdaa0d625be7"}'></script>
 </body>
 </html>
