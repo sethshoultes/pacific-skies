@@ -11,7 +11,6 @@ import * as auth from './auth.js';
 import * as stats from './stats.js';
 import { Lobby } from './game/lobby.js';
 import { clientIp } from './client-ip.js';
-import { validateAllStages } from '../shared/stages.js';
 import * as admin from './admin.js';
 import * as account from './account.js';
 import * as telemetry from './telemetry.js';
@@ -22,7 +21,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '..');
 const PORT = Number(process.env.PORT || 3001);
 const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+// SKIES_STAGES and SKIES_TICK_MS shorten matches for the WebSocket tests; unset, rooms fly the real game.
 const lobby = new Lobby({
+  stageCount: process.env.SKIES_STAGES ? Number(process.env.SKIES_STAGES) : undefined,
+  tickMs: process.env.SKIES_TICK_MS ? Number(process.env.SKIES_TICK_MS) : undefined,
   onRoomStart: (room, hostPid) => {
     const uid = room.clients.get(hostPid)?.user?.id || null;
     telemetry.recordEvent({ kind: 'start', userId: uid, data: { roomId: room.id } });
@@ -30,9 +32,6 @@ const lobby = new Lobby({
 });
 admin.init(lobby);
 telemetry.startRetentionJob(90);
-
-const stageProblems = validateAllStages();
-if (stageProblems.length) log.warn('stage data validation issues at startup', { problems: stageProblems });
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -230,29 +229,20 @@ wss.on('connection', (ws, req) => {
             target._telemetryHooked = true;
             const origBroadcast = target.broadcast.bind(target);
             target.broadcast = (out) => {
-              if (out && out.t === 'gameover') telemetry.recordEvent({ kind: 'run_end', data: { roomId: target.id, stage: out.snapshot?.stageNumber, reason: out.reason } });
+              if (out && out.t === 'gameover') telemetry.recordEvent({ kind: 'run_end', data: { roomId: target.id, stage: out.stage, reason: out.result } });
               return origBroadcast(out);
             };
           }
           break;
         }
-        case 'input': if (room) room.handleInput(pid, msg); break;
+        case 'act': if (!room) throw new Error('Join a room first'); room.act(pid, msg.a); break;
+        case 'type': if (room) room.setType(pid, msg.type, msg.level); break;
         case 'chat': {
           if (!room) break;
           chats = chats.filter((c) => t - c < 10_000);
           if (chats.length >= CHATS_PER_10S) throw new Error('Slow down: 5 messages per 10 seconds');
           chats.push(t);
           room.chat(pid, msg.text);
-          break;
-        }
-        case 'debug': {
-          // Test-only hook (SKIES_DEBUG=1) so e2e scripts can force a stage clear without
-          // playing the whole stage. Usable either from a connection that has already joined
-          // the room, or -- so a lightweight helper socket can drive it without occupying one of
-          // the room's two player slots -- by naming the room directly via msg.roomId.
-          if (process.env.SKIES_DEBUG !== '1') break;
-          const target = room || (msg.roomId ? lobby.get(msg.roomId) : null);
-          if (target) target.debugAction(msg.action);
           break;
         }
         case 'ready': if (room) room.setReady(pid, !!msg.ready); break;
@@ -273,6 +263,7 @@ wss.on('connection', (ws, req) => {
             telemetry.recordEvent({ kind: 'leave', userId: uid, ip, data: { roomId } });
           }
           break;
+        default: throw new Error('Refused: unknown message');
       }
     } catch (e) { send({ t: 'error', error: e.message }); }
   });
@@ -281,7 +272,7 @@ wss.on('connection', (ws, req) => {
 setInterval(() => heartbeat(wss.clients), 30000).unref();
 
 server.listen(PORT, () => {
-  console.log(`Pacific Skies listening on http://localhost:${PORT}`);
+  console.log(`Stormglass listening on http://localhost:${PORT}`);
 });
 
 // re-export a couple of small helpers `db`/`now` might be imported for by scripts/tests

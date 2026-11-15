@@ -3,10 +3,10 @@ import { renderNav, api, me, esc, fmtTime, ago } from './common.js';
 renderNav('dashboard');
 
 const STAT_LABELS = {
-  kills: 'Total kills', red_formations: 'Red formations broken', bosses: 'Bosses destroyed',
-  untouched_stages: 'Stages cleared untouched', coop_stage_clears: 'Co-op stage clears',
-  continues: 'Continues used', deepest_stage_reached: 'Deepest stage reached (stages cleared)',
-  stages_cleared_run_max: 'Best single-run stage streak', loop_dodges: 'Bullets dodged looping',
+  kills: 'Drones down', thunderheads: 'Thunderheads down', bosses: 'Dreadnoughts down',
+  untouched_stages: 'Stages cleared untouched', coop_stage_clears: 'Stages cleared together',
+  continues: 'Continues taken', deepest_stage: 'Deepest stage reached',
+  stages_cleared_run_max: 'Best single-run stage streak', dashes: 'Dashes',
 };
 
 async function main() {
