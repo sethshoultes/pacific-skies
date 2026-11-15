@@ -10,7 +10,7 @@ import path from 'node:path';
 const dataDir = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
 process.env.DATA_DIR = dataDir;
 const { Room } = await import('../server/game/room.js');
-const { Lobby } = await import('../server/game/lobby.js');
+const { Lobby, MAX_ROOMS, MAX_LISTED } = await import('../server/game/lobby.js');
 const { db } = await import('../server/db.js');
 
 // Belt-and-suspenders cleanup: `after` handles the normal exit path, `process.on('exit')` covers
@@ -255,5 +255,23 @@ test('the public room list omits per-player ids and the host flag; in-room info 
   assert.deepEqual(listed.players, [{ name: 'A', ready: false, away: false }, { name: 'B', ready: false, away: false }]);
   for (const p of listed.players) { assert.equal('pid' in p, false); assert.equal('host' in p, false); }
   assert.deepEqual(room.info().players.map((p) => [p.pid, p.host]), [['a', true], ['b', false]]);
+  room.close();
+});
+
+test('the lobby refuses a room past MAX_ROOMS and lists at most MAX_LISTED', () => {
+  const lobby = new Lobby();
+  for (let i = 0; i < MAX_ROOMS; i++) lobby.create({ name: 'R' + i });
+  assert.throws(() => lobby.create({}), /busy/);
+  assert.equal(lobby.rooms.size, MAX_ROOMS);
+  assert.equal(lobby.list().length, MAX_LISTED);
+  for (const r of [...lobby.rooms.values()]) r.close();
+});
+
+test('quick play finds an open room but never creates one', () => {
+  const lobby = new Lobby();
+  assert.equal(lobby.open(), null);
+  assert.equal(lobby.rooms.size, 0);
+  const room = lobby.create({ name: 'Open' });
+  assert.equal(lobby.open(), room);
   room.close();
 });
