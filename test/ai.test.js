@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { createMatch, step, legalActions } from '../shared/engine/index.js';
-import { seedStage } from '../shared/engine/stages-seed.js';
+import { draftStage } from '../shared/ai/builder.js';
 import { pilotAction, LEVELS } from '../shared/ai/pilot.js';
 
 const QUIET = { waves: [], boss: { tick: 100000, hp: 5 } };
@@ -37,7 +37,7 @@ test(`AI vs AI over ${SEEDS} seeds: hard's median stage >= medium's >= easy's, a
 });
 
 test('pilotAction returns a legal action, is deterministic, and leaves the state alone', () => {
-  const s = createMatch({ seed: 'p', stages: [seedStage('p', 2)], seats: 2 });
+  const s = createMatch({ seed: 'p', stages: [draftStage({ seed: 'p', depth: 2 })], seats: 2 });
   let state = s;
   for (let i = 0; i < 200; i++) state = step(state, [pilotAction(state, 0, 'hard'), pilotAction(state, 1, 'easy')]).state;
   const before = JSON.stringify(state);
