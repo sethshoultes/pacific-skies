@@ -63,3 +63,26 @@ test('one address holds at most 30 sockets; the next is closed with 1013', fresh
   assert.equal(await Promise.race([extra.closed, timedOut]), 1013);
   for (const s of socks) s.ws.close();
 }));
+
+test('a closed socket frees its place under the per-address cap', fresh(async () => {
+  const socks = [];
+  for (let i = 0; i < 30; i++) socks.push(await connect());
+  socks[0].ws.close();
+  await socks[0].closed;
+  await settle(100);
+  const next = await connect();
+  next.ws.send(JSON.stringify({ t: 'join', name: 'T' }));
+  await settle(200);
+  assert.ok(next.msgs.some((m) => m.t === 'joined'), 'the 30th place is free again');
+  for (const s of [...socks.slice(1), next]) s.ws.close();
+}));
+
+test('past 90 messages in a second the rest are dropped, and the socket stays open', fresh(async () => {
+  const c = await joinQuick();
+  for (let i = 0; i < 100; i++) c.ws.send('{"t":"noop"}');
+  c.ws.send(JSON.stringify({ t: 'leave' }));
+  await settle();
+  assert.ok(!c.msgs.some((m) => m.t === 'left'), 'the leave past 90 was dropped');
+  assert.equal(c.ws.readyState, WebSocket.OPEN);
+  c.ws.close();
+}));

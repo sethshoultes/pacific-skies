@@ -193,6 +193,7 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 wss.on('connection', (ws, req) => {
   const ip = clientIp(req);
   const fromIp = socketsByIp.get(ip) || 0;
+  // ws adds this socket to wss.clients before emitting connection, so > admits exactly MAX_SOCKETS.
   if (wss.clients.size > MAX_SOCKETS || fromIp >= MAX_SOCKETS_PER_IP) { ws.close(1013, 'Server busy'); return; }
   socketsByIp.set(ip, fromIp + 1);
   ws.on('close', () => { const n = (socketsByIp.get(ip) || 1) - 1; if (n > 0) socketsByIp.set(ip, n); else socketsByIp.delete(ip); });
