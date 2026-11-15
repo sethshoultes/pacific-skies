@@ -61,7 +61,18 @@ function rateLimit(key, max, windowMs) {
   if (recent.length >= max) { buckets.set(key, recent); return false; }
   recent.push(t); buckets.set(key, recent); return true;
 }
-function roomCreateKey(user, ip) { return 'createroom:' + (user ? 'u' + user.id : ip); }
+function createRoom(user, ip, opts) {
+  const key = 'createroom:' + (user ? 'u' + user.id : ip);
+  if (!rateLimit(key, 10, 60_000)) throw Object.assign(new Error('Slow down: too many rooms created'), { status: 429 });
+  return lobby.create(opts);
+}
+// Public WebSocket caps, keyed per socket and in total so they hold whether or not TRUST_PROXY is set.
+const MAX_SOCKETS = 500;
+const MAX_SOCKETS_PER_IP = 30; // needs TRUST_PROXY=1 behind a proxy, or every visitor shares one address
+const socketsByIp = new Map();
+const MSGS_PER_SECOND = 90; // inputs arrive at 30/s; past this a socket's messages are dropped
+const MSGS_CLOSE_AT = 180; // past this in one second the socket is closed
+const CHATS_PER_10S = 5;
 setInterval(() => {
   const t = Date.now();
   for (const [key, times] of buckets) if (!times.length || t - times[times.length - 1] > 10 * 60_000) buckets.delete(key);
@@ -155,10 +166,8 @@ async function api(req, res, url) {
   if (m === 'GET' && url.pathname === '/api/rooms') return json(res, 200, { rooms: lobby.list() });
 
   if (m === 'POST' && url.pathname === '/api/rooms') {
-    const ip = clientIp(req);
-    if (!rateLimit(roomCreateKey(user, ip), 10, 60_000)) return json(res, 429, { error: 'Slow down: too many rooms created' });
     const b = await readBody(req);
-    const room = lobby.create({ name: b.name, isPublic: b.public !== false });
+    const room = createRoom(user, clientIp(req), { name: b.name, isPublic: b.public !== false });
     return json(res, 200, { room: room.publicInfo() });
   }
   json(res, 404, { error: 'No such endpoint' });
@@ -182,13 +191,22 @@ const server = http.createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 wss.on('connection', (ws, req) => {
+  const ip = clientIp(req);
+  const fromIp = socketsByIp.get(ip) || 0;
+  if (wss.clients.size > MAX_SOCKETS || fromIp >= MAX_SOCKETS_PER_IP) { ws.close(1013, 'Server busy'); return; }
+  socketsByIp.set(ip, fromIp + 1);
+  ws.on('close', () => { const n = (socketsByIp.get(ip) || 1) - 1; if (n > 0) socketsByIp.set(ip, n); else socketsByIp.delete(ip); });
   let pid = crypto.randomBytes(4).toString('hex');
   let room = null;
-  const ip = clientIp(req);
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   const send = (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
+  let second = 0, inSecond = 0, chats = [];
   ws.on('message', (data) => {
+    const t = Date.now();
+    if (t - second >= 1000) { second = t; inSecond = 0; }
+    if (++inSecond > MSGS_CLOSE_AT) { ws.close(1008, 'Too many messages'); return; }
+    if (inSecond > MSGS_PER_SECOND) return;
     let msg; try { msg = JSON.parse(data); } catch { return; }
     try {
       switch (msg.t) {
@@ -202,10 +220,8 @@ wss.on('connection', (ws, req) => {
             const resumed = target.resume(ws, msg.resumePid, msg.resume);
             if (resumed) { pid = resumed.pid; room = target; break; }
           }
-          if (!target && msg.create) {
-            if (!rateLimit(roomCreateKey(user, ip), 10, 60_000)) throw new Error('Slow down: too many rooms created');
-            target = lobby.create({ name: msg.roomName, isPublic: msg.public !== false });
-          } else if (!target) target = lobby.quick();
+          if (!target && msg.create) target = createRoom(user, ip, { name: msg.roomName, isPublic: msg.public !== false });
+          else if (!target) target = lobby.open() || createRoom(user, ip, {});
           const joined = target.join(ws, { pid, user, name, guestId: msg.guestId || null });
           room = target;
           telemetry.recordEvent({ kind: 'join', userId: user?.id || null, guestId: joined?.guestId || null, ip, data: { roomId: target.id } });
@@ -220,7 +236,14 @@ wss.on('connection', (ws, req) => {
           break;
         }
         case 'input': if (room) room.handleInput(pid, msg); break;
-        case 'chat': if (room) room.chat(pid, msg.text); break;
+        case 'chat': {
+          if (!room) break;
+          chats = chats.filter((c) => t - c < 10_000);
+          if (chats.length >= CHATS_PER_10S) throw new Error('Slow down: 5 messages per 10 seconds');
+          chats.push(t);
+          room.chat(pid, msg.text);
+          break;
+        }
         case 'debug': {
           // Test-only hook (SKIES_DEBUG=1) so e2e scripts can force a stage clear without
           // playing the whole stage. Usable either from a connection that has already joined

@@ -1,4 +1,4 @@
-import { test, after } from 'node:test';
+import { test, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
@@ -10,7 +10,7 @@ import path from 'node:path';
 const dataDir = mkdtempSync(path.join(tmpdir(), 'skies-room-test-'));
 process.env.DATA_DIR = dataDir;
 const { Room } = await import('../server/game/room.js');
-const { Lobby } = await import('../server/game/lobby.js');
+const { Lobby, MAX_ROOMS, MAX_LISTED, EMPTY_ROOM_MS } = await import('../server/game/lobby.js');
 const { db } = await import('../server/db.js');
 
 // Belt-and-suspenders cleanup: `after` handles the normal exit path, `process.on('exit')` covers
@@ -256,4 +256,36 @@ test('the public room list omits per-player ids and the host flag; in-room info 
   for (const p of listed.players) { assert.equal('pid' in p, false); assert.equal('host' in p, false); }
   assert.deepEqual(room.info().players.map((p) => [p.pid, p.host]), [['a', true], ['b', false]]);
   room.close();
+});
+
+test('the lobby refuses a room past MAX_ROOMS and lists at most MAX_LISTED', () => {
+  const lobby = new Lobby();
+  for (let i = 0; i < MAX_ROOMS; i++) lobby.create({ name: 'R' + i });
+  assert.throws(() => lobby.create({}), /busy/);
+  assert.equal(lobby.rooms.size, MAX_ROOMS);
+  assert.equal(lobby.list().length, MAX_LISTED);
+  for (const r of [...lobby.rooms.values()]) r.close();
+});
+
+test('quick play finds an open room but never creates one', () => {
+  const lobby = new Lobby();
+  assert.equal(lobby.open(), null);
+  assert.equal(lobby.rooms.size, 0);
+  const room = lobby.create({ name: 'Open' });
+  assert.equal(lobby.open(), room);
+  room.close();
+});
+
+test('a room nobody joins is closed after EMPTY_ROOM_MS; a joined one stays', () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const lobby = new Lobby();
+    const empty = lobby.create({ name: 'Empty' });
+    const used = lobby.create({ name: 'Used' });
+    used.join(fakeClient().ws, { pid: 'a', user: null, name: 'A', guestId: null });
+    mock.timers.tick(EMPTY_ROOM_MS);
+    assert.equal(lobby.get(empty.id), null);
+    assert.equal(lobby.get(used.id), used);
+    used.close();
+  } finally { mock.timers.reset(); }
 });

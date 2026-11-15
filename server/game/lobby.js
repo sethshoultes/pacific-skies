@@ -4,6 +4,10 @@ import { Room } from './room.js';
 
 const ADJ = ['Crimson', 'Azure', 'Golden', 'Steel', 'Coral', 'Storm', 'Iron', 'Pacific'];
 const NOUN = ['Squadron', 'Wing', 'Flight', 'Formation', 'Patrol', 'Sortie', 'Ace', 'Skies'];
+// Public caps (arcade rule: a public endpoint that creates things needs a ceiling).
+export const MAX_ROOMS = 100;
+export const MAX_LISTED = 50;
+export const EMPTY_ROOM_MS = 60_000;
 
 export class Lobby {
   // onRoomStart(room, hostPid), if given, fires for every room the moment it actually starts --
@@ -14,9 +18,10 @@ export class Lobby {
     this.onRoomStart = onRoomStart || (() => {});
   }
 
-  list() { return [...this.rooms.values()].filter((r) => r.isPublic && r.state !== 'over').map((r) => r.publicInfo()); }
+  list() { return [...this.rooms.values()].filter((r) => r.isPublic && r.state !== 'over').slice(0, MAX_LISTED).map((r) => r.publicInfo()); }
 
   create({ name, isPublic = true } = {}) {
+    if (this.rooms.size >= MAX_ROOMS) throw new Error('Every room is busy; try again in a minute');
     const id = crypto.randomBytes(3).toString('hex');
     const roomName = String(name || `${ADJ[Math.floor(Math.random() * ADJ.length)]} ${NOUN[Math.floor(Math.random() * NOUN.length)]}`).slice(0, 24);
     const room = new Room({
@@ -25,15 +30,17 @@ export class Lobby {
       onStart: (hostPid) => this.onRoomStart(room, hostPid),
     });
     this.rooms.set(id, room);
+    // A room nobody joins is closed, so held-open rooms cannot fill MAX_ROOMS.
+    setTimeout(() => { if (room.clients.size === 0 && this.rooms.get(id) === room) room.close(); }, EMPTY_ROOM_MS).unref();
     return room;
   }
 
   get(id) { return this.rooms.get(id) || null; }
 
-  /** Quick play: join the fullest public room still in its lobby (not yet started), or make one. */
-  quick() {
+  /** Quick play: the fullest public room still in its lobby (not yet started), or null. */
+  open() {
     const candidates = [...this.rooms.values()].filter((r) => r.isPublic && !r.full && r.state === 'lobby');
     candidates.sort((a, b) => b.playerCount - a.playerCount);
-    return candidates[0] || this.create({});
+    return candidates[0] || null;
   }
 }

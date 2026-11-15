@@ -23,7 +23,8 @@ git checkout -q "$BRANCH"
 git reset -q --hard "origin/$BRANCH"
 npm ci --omit=dev 2>&1 | tail -1
 
-export PORT DATA_DIR="$HOME/data"
+# Behind Cloudflare and nginx every player arrives from 127.0.0.1; the caps need the real address (lead, 2026-11-15).
+export PORT DATA_DIR="$HOME/data" TRUST_PROXY=1
 mkdir -p "$DATA_DIR"
 pm2 restart pacific-skies --update-env >/dev/null 2>&1 \
   || pm2 start server/index.js --name pacific-skies --node-args="--no-warnings=ExperimentalWarning" >/dev/null
