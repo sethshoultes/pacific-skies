@@ -5,9 +5,9 @@ import { createMatch, step } from '../shared/engine/index.js';
 import { WORLD_W, WORLD_H } from '../shared/engine/rules.js';
 import { draftStage } from '../shared/ai/builder.js';
 import { pilotAction } from '../shared/ai/pilot.js';
-import { drawFrame, layout } from '../client/next/render.js';
-import { moveFromVector, keysToAction, dragToAction } from '../client/next/input.js';
-import { lookOf, LOOKS } from '../client/next/lore.js';
+import { drawFrame, layout } from '../client/render.js';
+import { moveFromVector, keysToAction, dragToAction } from '../client/input.js';
+import { lookOf, LOOKS } from '../client/lore.js';
 
 const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
 
@@ -36,15 +36,15 @@ function midStage() {
   return s;
 }
 
-test('banned names appear nowhere in the new game, engine or AI', () => {
+test('banned names appear nowhere in client/, server/ or shared/', () => {
   const banned = /\b(1942|Capcom|P-38|Ayako|Tokyo|Midway|Super Ace|POW|Insert Coin)\b/;
-  const files = ['client/next', 'shared/engine', 'shared/ai'].flatMap(filesUnder);
-  assert.ok(files.length >= 10, files.join());
+  const files = ['client', 'server', 'shared'].flatMap(filesUnder);
+  assert.ok(files.length >= 30, files.join());
   for (const f of files) assert.doesNotMatch(read(f), banned, f);
 });
 
 test('the renderer never steps the match or draws a random number, in its source', () => {
-  for (const f of ['client/next/render.js', 'client/next/lore.js']) {
+  for (const f of ['client/render.js', 'client/lore.js']) {
     const src = read(f);
     assert.doesNotMatch(src, /\bstep\b|\badvance\b|engine\/index\.js|Math\.random/, f);
   }
