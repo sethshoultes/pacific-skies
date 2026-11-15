@@ -1,4 +1,4 @@
-# Stormglass
+# Squallkite
 
 Weather-courier kites carry sealed storms between the glass towers of a sky archipelago; rogue
 lightning drones and cloud-eating dreadnoughts want them back. A vertical shooter on a pure, seeded

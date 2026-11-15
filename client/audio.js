@@ -1,4 +1,4 @@
-// Stormglass sounds, all synthesised: glassy sine chimes, filtered-noise thunder, a rising gust.
+// Squallkite sounds, all synthesised: glassy sine chimes, filtered-noise thunder, a rising gust.
 // Silent until the first key or touch (browsers want a gesture), and the mute choice is remembered.
 const MUTE_KEY = 'stormglass.mute';
 

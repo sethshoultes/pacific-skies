@@ -1,4 +1,4 @@
-// Stormglass online: the room socket and the room-lobby card. The server owns the match; this file
+// Squallkite online: the room socket and the room-lobby card. The server owns the match; this file
 // sends a join and Actions, and hands every server message to `on[msg.t]` for main.js to show.
 import { token } from './common.js';
 

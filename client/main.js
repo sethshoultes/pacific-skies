@@ -1,4 +1,4 @@
-// Stormglass in the browser. Solo and Watch run the pure engine right here, on stages the AI built
+// Squallkite in the browser. Solo and Watch run the pure engine right here, on stages the AI built
 // and checked off the main thread; online, the server runs the match and this page sends Actions
 // and draws its snapshots. This file owns the clock, the input and the screens; the engine owns the
 // rules and render.js owns the pixels.

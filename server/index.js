@@ -272,7 +272,7 @@ wss.on('connection', (ws, req) => {
 setInterval(() => heartbeat(wss.clients), 30000).unref();
 
 server.listen(PORT, () => {
-  console.log(`Stormglass listening on http://localhost:${PORT}`);
+  console.log(`Squallkite listening on http://localhost:${PORT}`);
 });
 
 // re-export a couple of small helpers `db`/`now` might be imported for by scripts/tests

@@ -1,4 +1,4 @@
-// The Stormglass renderer: draws a frame from match state and nothing else. It never advances the
+// The Squallkite renderer: draws a frame from match state and nothing else. It never advances the
 // match and draws no random numbers: every cloud, raindrop and bolt comes from a hash of the tick,
 // so the same state always paints the same picture.
 import { WORLD_W, WORLD_H, DASH_COOLDOWN_TICKS } from '../shared/engine/rules.js';
