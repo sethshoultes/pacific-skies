@@ -1,4 +1,4 @@
-// Stormglass names. Weather-courier kites carry sealed storms between the glass towers of a sky
+// Squallkite names. Weather-courier kites carry sealed storms between the glass towers of a sky
 // archipelago; rogue lightning drones and cloud-eating dreadnoughts want the storms back.
 
 export const KITES = ['Tinderwing', 'Quillfeather'];

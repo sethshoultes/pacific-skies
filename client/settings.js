@@ -41,7 +41,7 @@ document.querySelector('#s-export').addEventListener('click', async () => {
   try {
     const data = await api('/api/me/export');
     toast('Export ready', 'Check the browser console for your data.');
-    console.log('Pacific Skies data export', data);
+    console.log('Squallkite data export', data);
   } catch (e) { msg(e.message); }
 });
 

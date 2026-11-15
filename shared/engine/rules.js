@@ -1,5 +1,5 @@
 // Tuning for the pure engine. Every duration is in ticks and every speed in px per tick, so the
-// engine never reads a clock. Neutral names; the Stormglass art and names arrive in S2.
+// engine never reads a clock. Neutral names; the Squallkite art and names arrive in S2.
 
 export const TICK_RATE = 30;
 export const WORLD_W = 384;

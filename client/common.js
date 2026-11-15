@@ -82,7 +82,7 @@ export async function renderNav(active) {
   const m = await me();
   track('pageview', { path: location.pathname });
   nav.innerHTML = `
-    <a class="brand" href="/">PACIFIC SKIES</a>
+    <a class="brand" href="/">SQUALLKITE</a>
     <a class="nl ${active === 'play' ? 'active' : ''}" href="/">Play</a>
     <a class="nl ${active === 'dashboard' ? 'active' : ''}" href="/dashboard.html">Dashboard</a>
     ${m.user ? `<a class="nl ${active === 'settings' ? 'active' : ''}" href="/settings.html">Settings</a>` : ''}

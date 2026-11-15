@@ -1,4 +1,4 @@
-// The AI stage builder. `draftStage` lays out a Stormglass stage from a seed and a depth, out of a
+// The AI stage builder. `draftStage` lays out a Squallkite stage from a seed and a depth, out of a
 // small vocabulary of figures; `checkStage` flies bot matches on a spec and accepts it only when it
 // plays fair: medium clears it at a rate inside a band, hard always finds a line through without
 // losing a life, and the boss arrives in time and hard can down it before it escapes.
