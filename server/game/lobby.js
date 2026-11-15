@@ -7,6 +7,7 @@ const NOUN = ['Squadron', 'Wing', 'Flight', 'Formation', 'Patrol', 'Sortie', 'Ac
 // Public caps (arcade rule: a public endpoint that creates things needs a ceiling).
 export const MAX_ROOMS = 100;
 export const MAX_LISTED = 50;
+export const EMPTY_ROOM_MS = 60_000;
 
 export class Lobby {
   // onRoomStart(room, hostPid), if given, fires for every room the moment it actually starts --
@@ -29,6 +30,8 @@ export class Lobby {
       onStart: (hostPid) => this.onRoomStart(room, hostPid),
     });
     this.rooms.set(id, room);
+    // A room nobody joins is closed, so held-open rooms cannot fill MAX_ROOMS.
+    setTimeout(() => { if (room.clients.size === 0 && this.rooms.get(id) === room) room.close(); }, EMPTY_ROOM_MS).unref();
     return room;
   }
 

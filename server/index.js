@@ -68,6 +68,8 @@ function createRoom(user, ip, opts) {
 }
 // Public WebSocket caps, keyed per socket and in total so they hold whether or not TRUST_PROXY is set.
 const MAX_SOCKETS = 500;
+const MAX_SOCKETS_PER_IP = 30; // needs TRUST_PROXY=1 behind a proxy, or every visitor shares one address
+const socketsByIp = new Map();
 const MSGS_PER_SECOND = 90; // inputs arrive at 30/s; past this a socket's messages are dropped
 const MSGS_CLOSE_AT = 180; // past this in one second the socket is closed
 const CHATS_PER_10S = 5;
@@ -189,10 +191,13 @@ const server = http.createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 wss.on('connection', (ws, req) => {
-  if (wss.clients.size > MAX_SOCKETS) { ws.close(1013, 'Server busy'); return; }
+  const ip = clientIp(req);
+  const fromIp = socketsByIp.get(ip) || 0;
+  if (wss.clients.size > MAX_SOCKETS || fromIp >= MAX_SOCKETS_PER_IP) { ws.close(1013, 'Server busy'); return; }
+  socketsByIp.set(ip, fromIp + 1);
+  ws.on('close', () => { const n = (socketsByIp.get(ip) || 1) - 1; if (n > 0) socketsByIp.set(ip, n); else socketsByIp.delete(ip); });
   let pid = crypto.randomBytes(4).toString('hex');
   let room = null;
-  const ip = clientIp(req);
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   const send = (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };

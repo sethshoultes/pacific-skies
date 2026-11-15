@@ -54,3 +54,12 @@ test('quick play stops creating rooms after ten a minute from one address', fres
   assert.ok(!late.msgs.some((m) => m.t === 'joined'));
   for (const s of [...socks, late]) s.ws.close();
 }));
+
+test('one address holds at most 30 sockets; the next is closed with 1013', fresh(async () => {
+  const socks = [];
+  for (let i = 0; i < 30; i++) socks.push(await connect());
+  const extra = await connect();
+  const timedOut = new Promise((r) => setTimeout(() => r('still open after 5 s'), 5000).unref());
+  assert.equal(await Promise.race([extra.closed, timedOut]), 1013);
+  for (const s of socks) s.ws.close();
+}));
