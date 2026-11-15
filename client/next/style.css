@@ -1,0 +1,46 @@
+:root {
+  --ink: #f6ecd9;
+  --dim: rgba(246, 236, 217, 0.7);
+  --card: rgba(18, 20, 44, 0.78);
+  --edge: rgba(207, 233, 255, 0.28);
+  --warm: #ff8a5c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #171a36; color: var(--ink); }
+body { font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+.card {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 32px)); padding: 24px 22px 18px;
+  background: var(--card); border: 1px solid var(--edge); border-radius: 14px;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-align: center;
+}
+.card[hidden] { display: none; }
+h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 700; margin: 0 0 8px; letter-spacing: 0.02em; }
+h1 { font-size: clamp(38px, 11vw, 56px); }
+h2 { font-size: 28px; }
+.lede { margin: 0 0 18px; color: var(--dim); font-family: Georgia, serif; font-style: italic; }
+.row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+button {
+  min-height: 44px; min-width: 44px; padding: 0 20px; border-radius: 10px;
+  border: 1px solid var(--edge); background: rgba(255, 255, 255, 0.08); color: var(--ink);
+  font: 600 16px system-ui, sans-serif; cursor: pointer;
+}
+button.primary { background: var(--warm); border-color: var(--warm); color: #1d1326; }
+button:disabled { opacity: 0.45; cursor: progress; }
+button:focus-visible { outline: 2px solid #cfe9ff; outline-offset: 2px; }
+.status { margin: 14px 0 6px; font-size: 13px; color: var(--dim); min-height: 1.4em; }
+.hint { margin: 0; font-size: 12px; color: var(--dim); }
+
+.chip { position: fixed; top: max(8px, env(safe-area-inset-top)); right: 8px; z-index: 2; font-size: 13px; padding: 0 12px; min-height: 44px; }
+body[data-screen="playing"] .chip { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); }
+
+.dash {
+  display: none; position: fixed; right: 16px; bottom: max(64px, calc(env(safe-area-inset-bottom) + 56px)); z-index: 2;
+  width: 72px; height: 72px; padding: 0; border-radius: 50%;
+  background: rgba(95, 211, 196, 0.28); border-color: rgba(95, 211, 196, 0.7); font-size: 14px;
+}
+@media (pointer: coarse) { body[data-screen="playing"] .dash { display: block; } }
+body.touch[data-screen="playing"] .dash { display: block; }

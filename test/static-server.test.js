@@ -72,3 +72,14 @@ test('POST body over the size cap is rejected', async (t) => {
     assert.ok(e, 'connection aborted, as expected for an oversized body');
   }
 });
+
+test('static server serves the new game at /next/ with its modules', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+  const page = await fetch(server.baseUrl + '/next/');
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /<title>Stormglass<\/title>/);
+  for (const p of ['/next/main.js', '/next/render.js', '/shared/ai/builder.js']) {
+    assert.equal((await fetch(server.baseUrl + p)).status, 200, p);
+  }
+});
